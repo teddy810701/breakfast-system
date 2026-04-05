@@ -1,5 +1,12 @@
 import { db } from './firebase';
-import { collection, addDoc, getDocs } from 'firebase/firestore';
+import {
+  collection,
+  addDoc,
+  onSnapshot,
+  doc,
+  updateDoc,
+  deleteDoc
+} from 'firebase/firestore';
 import React, { useState, useEffect } from 'react';
 import {
   Users,
@@ -27,33 +34,7 @@ import {
 const App = () => {
   const DEFAULT_INITIAL_POINTS = 600;
   const GLOBAL_BASE_BONUS = 600;
-const handleAddEmployee = async () => {
-  if (!editingEmp?.name?.trim()) {
-    alert("請輸入姓名");
-    return;
-  }
 
-  const newEmployee = {
-    name: editingEmp.name.trim(),
-    shop: editingEmp.shop || "",
-    startDate: editingEmp.startDate || new Date().toISOString().split('T')[0],
-    currentPoints: 600,
-    initialPoints: 600,
-    lastYearLow: editingEmp.lastYearLow || false,
-    level: editingEmp.level || "未設定",
-    multiplier: editingEmp.multiplier ?? 1,
-    skillsPassed: editingEmp.skillsPassed ?? 0,
-  };
-
-  try {
-    await addDoc(collection(db, "employees"), newEmployee);
-    alert("✅ 已同步到 Firebase");
-    setEditingEmp(null);
-  } catch (error) {
-    console.error("新增員工失敗:", error);
-    alert("❌ 新增失敗");
-  }
-};
   const PERFORMANCE_ITEMS = {
     penalty: [
       { label: '遲到 (預設1分/可修改)', val: -1 },
@@ -95,29 +76,73 @@ const handleAddEmployee = async () => {
   const [deletingEmpId, setDeletingEmpId] = useState(null);
 
   useEffect(() => {
-    const fetchEmployees = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'employees'));
-        const data = querySnapshot.docs.map((doc) => {
-          const raw = doc.data();
+    const unsubscribe = onSnapshot(
+      collection(db, 'employees'),
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => {
+          const raw = docSnap.data();
           return {
-            id: raw.id ?? doc.id,
+            id: docSnap.id,
             ...raw,
             skillsPassed: raw.skillsPassed ?? raw.skillspassed ?? 0,
-            lastYearLow: raw.lastYearLow ?? raw.LastYearLow ?? false
+            lastYearLow: raw.lastYearLow ?? raw.LastYearLow ?? false,
+            currentPoints:
+              typeof raw.currentPoints === 'number'
+                ? raw.currentPoints
+                : raw.initialPoints ?? DEFAULT_INITIAL_POINTS,
+            initialPoints:
+              typeof raw.initialPoints === 'number'
+                ? raw.initialPoints
+                : DEFAULT_INITIAL_POINTS,
+            multiplier:
+              typeof raw.multiplier === 'number' ? raw.multiplier : 1,
+            level: raw.level || '一般夥伴',
+            shop: raw.shop || '',
+            name: raw.name || '',
+            startDate: raw.startDate || ''
           };
         });
 
         setEmployees(data);
-        if (data.length > 0) {
-          setSelectedEmpId((prev) => prev ?? data[0].id);
-        }
-      } catch (error) {
+        setSelectedEmpId((prev) => {
+          if (prev && data.some((emp) => emp.id === prev)) return prev;
+          return data[0]?.id ?? null;
+        });
+      },
+      (error) => {
         console.error('讀取 employees 失敗:', error);
       }
-    };
+    );
 
-    fetchEmployees();
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'logs'),
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => {
+          const raw = docSnap.data();
+          return {
+            id: docSnap.id,
+            ...raw
+          };
+        });
+
+        data.sort((a, b) => {
+          const aTime = new Date(a.timestamp || 0).getTime() || 0;
+          const bTime = new Date(b.timestamp || 0).getTime() || 0;
+          return bTime - aTime;
+        });
+
+        setLogs(data);
+      },
+      (error) => {
+        console.error('讀取 logs 失敗:', error);
+      }
+    );
+
+    return () => unsubscribe();
   }, []);
 
   const showMessage = (text, type = 'info') => {
@@ -227,6 +252,43 @@ const handleAddEmployee = async () => {
     return 0;
   };
 
+  const handleAddEmployee = async () => {
+    if (!editingEmp?.name?.trim()) {
+      showMessage('請輸入姓名', 'error');
+      return;
+    }
+
+    const newEmployee = {
+      name: editingEmp.name.trim(),
+      shop: editingEmp.shop || '',
+      startDate: editingEmp.startDate || new Date().toISOString().split('T')[0],
+      currentPoints:
+        typeof editingEmp.initialPoints === 'number'
+          ? editingEmp.initialPoints
+          : DEFAULT_INITIAL_POINTS,
+      initialPoints:
+        typeof editingEmp.initialPoints === 'number'
+          ? editingEmp.initialPoints
+          : DEFAULT_INITIAL_POINTS,
+      lastYearLow: editingEmp.lastYearLow || false,
+      level: editingEmp.level || '一般夥伴',
+      multiplier:
+        typeof editingEmp.multiplier === 'number' ? editingEmp.multiplier : 1,
+      skillsPassed:
+        typeof editingEmp.skillsPassed === 'number' ? editingEmp.skillsPassed : 0
+    };
+
+    try {
+      await addDoc(collection(db, 'employees'), newEmployee);
+      setEditingEmp(null);
+      setIsAddingNew(false);
+      showMessage('新夥伴註冊成功', 'success');
+    } catch (error) {
+      console.error('新增員工失敗:', error);
+      showMessage('新增員工失敗', 'error');
+    }
+  };
+
   const handlePointChange = async (
     empId,
     amount,
@@ -236,19 +298,13 @@ const handleAddEmployee = async () => {
     const targetEmp = employees.find((e) => e.id === empId);
     if (!targetEmp) return;
 
-    const newLog = {
-      id: Date.now(),
-      empId,
-      occurrenceDate,
-      name: targetEmp.name,
-      amount,
-      reason,
-      note,
-      operator,
-      timestamp: new Date().toLocaleString()
-    };
+    const newPoints = (targetEmp.currentPoints || 0) + amount;
 
     try {
+      await updateDoc(doc(db, 'employees', empId), {
+        currentPoints: newPoints
+      });
+
       await addDoc(collection(db, 'logs'), {
         empId,
         occurrenceDate,
@@ -257,7 +313,7 @@ const handleAddEmployee = async () => {
         reason,
         note,
         operator,
-        timestamp: new Date().toLocaleString()
+        timestamp: new Date().toISOString()
       });
     } catch (error) {
       console.error('寫入失敗:', error);
@@ -265,15 +321,6 @@ const handleAddEmployee = async () => {
       return;
     }
 
-    setEmployees((prev) =>
-      prev.map((emp) =>
-        emp.id === empId
-          ? { ...emp, currentPoints: emp.currentPoints + amount }
-          : emp
-      )
-    );
-
-    setLogs((prevLogs) => [newLog, ...prevLogs]);
     setNote('');
     setSelectedItemLabel('');
     setCustomPoints(0);
@@ -283,39 +330,69 @@ const handleAddEmployee = async () => {
     );
   };
 
-  const undoLog = (log) => {
-    setEmployees((prev) =>
-      prev.map((emp) =>
-        emp.id === log.empId
-          ? { ...emp, currentPoints: emp.currentPoints - log.amount }
-          : emp
-      )
-    );
-    setLogs((prev) => prev.filter((l) => l.id !== log.id));
-    showMessage(`已撤銷 ${log.name} 的評分`, 'info');
+  const undoLog = async (log) => {
+    const targetEmp = employees.find((emp) => emp.id === log.empId);
+    if (!targetEmp) return;
+
+    try {
+      await updateDoc(doc(db, 'employees', log.empId), {
+        currentPoints: (targetEmp.currentPoints || 0) - log.amount
+      });
+      await deleteDoc(doc(db, 'logs', log.id));
+      showMessage(`已撤銷 ${log.name} 的評分`, 'info');
+    } catch (error) {
+      console.error('撤銷失敗:', error);
+      showMessage('撤銷失敗', 'error');
+    }
   };
 
-  const handleSaveEmpEdit = () => {
+  const handleSaveEmpEdit = async () => {
     if (!editingEmp) return;
 
     if (isAddingNew) {
-      setEmployees((prev) => [...prev, editingEmp]);
-      showMessage('新夥伴註冊成功', 'success');
-    } else {
-      setEmployees((prev) =>
-        prev.map((emp) => (emp.id === editingEmp.id ? editingEmp : emp))
-      );
-      showMessage('夥伴資料已更新', 'success');
+      await handleAddEmployee();
+      return;
     }
 
-    setEditingEmp(null);
-    setIsAddingNew(false);
+    try {
+      await updateDoc(doc(db, 'employees', editingEmp.id), {
+        name: editingEmp.name?.trim() || '',
+        shop: editingEmp.shop || '',
+        startDate: editingEmp.startDate || '',
+        level: editingEmp.level || '一般夥伴',
+        skillsPassed:
+          typeof editingEmp.skillsPassed === 'number' ? editingEmp.skillsPassed : 0,
+        multiplier:
+          typeof editingEmp.multiplier === 'number' ? editingEmp.multiplier : 1,
+        initialPoints:
+          typeof editingEmp.initialPoints === 'number'
+            ? editingEmp.initialPoints
+            : DEFAULT_INITIAL_POINTS,
+        currentPoints:
+          typeof editingEmp.currentPoints === 'number'
+            ? editingEmp.currentPoints
+            : DEFAULT_INITIAL_POINTS,
+        lastYearLow: editingEmp.lastYearLow || false
+      });
+
+      setEditingEmp(null);
+      setIsAddingNew(false);
+      showMessage('夥伴資料已更新', 'success');
+    } catch (error) {
+      console.error('更新員工失敗:', error);
+      showMessage('更新失敗', 'error');
+    }
   };
 
-  const deleteEmployee = (id) => {
-    setEmployees((prev) => prev.filter((e) => e.id !== id));
-    setDeletingEmpId(null);
-    showMessage('夥伴資料已刪除', 'error');
+  const deleteEmployee = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'employees', id));
+      setDeletingEmpId(null);
+      showMessage('夥伴資料已刪除', 'error');
+    } catch (error) {
+      console.error('刪除失敗:', error);
+      showMessage('刪除失敗', 'error');
+    }
   };
 
   const handleAuth = (e) => {
@@ -425,7 +502,10 @@ const handleAddEmployee = async () => {
                 </p>
               </div>
               <button
-                onClick={() => setEditingEmp(null)}
+                onClick={() => {
+                  setEditingEmp(null);
+                  setIsAddingNew(false);
+                }}
                 className="w-12 h-12 flex items-center justify-center bg-white border rounded-full hover:bg-red-50 hover:text-red-500 transition-all shadow-sm"
               >
                 <X size={24} />
@@ -552,13 +632,34 @@ const handleAddEmployee = async () => {
                       setEditingEmp({
                         ...editingEmp,
                         initialPoints: points,
-                        currentPoints: points
+                        currentPoints: isAddingNew
+                          ? points
+                          : editingEmp.currentPoints ?? points
                       });
                     }}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
                   />
                 </div>
               </div>
+
+              {!isAddingNew && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    目前總積分
+                  </label>
+                  <input
+                    type="number"
+                    value={editingEmp.currentPoints}
+                    onChange={(e) =>
+                      setEditingEmp({
+                        ...editingEmp,
+                        currentPoints: parseInt(e.target.value, 10) || 0
+                      })
+                    }
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
+                  />
+                </div>
+              )}
 
               <label className="flex items-center gap-3 p-4 bg-orange-50 rounded-2xl cursor-pointer group hover:bg-orange-100 transition-colors">
                 <input
@@ -583,12 +684,12 @@ const handleAddEmployee = async () => {
               </label>
 
               <button
-  onClick={isAddingNew ? handleAddEmployee : handleSaveEmpEdit}
-  className="w-full py-5 bg-gray-900 text-white rounded-2xl font-black text-lg hover:bg-orange-600 transition-all shadow-xl flex items-center justify-center gap-2"
->
-  <Save size={20} />
-  {isAddingNew ? '新增夥伴' : '儲存夥伴資料'}
-</button>
+                onClick={isAddingNew ? handleAddEmployee : handleSaveEmpEdit}
+                className="w-full py-5 bg-gray-900 text-white rounded-2xl font-black text-lg hover:bg-orange-600 transition-all shadow-xl shadow-gray-200 flex items-center justify-center gap-2"
+              >
+                <Save size={20} />
+                {isAddingNew ? '新增夥伴' : '儲存夥伴資料'}
+              </button>
             </div>
           </div>
         </div>
@@ -787,7 +888,7 @@ const handleAddEmployee = async () => {
                 onClick={() =>
                   handlePointChange(selectedEmpId, customPoints, selectedItemLabel)
                 }
-                disabled={!selectedItemLabel || !note}
+                disabled={!selectedItemLabel || !note || !selectedEmpId}
                 className="w-full py-5 rounded-3xl font-black text-xl bg-orange-600 text-white disabled:bg-gray-200 transition-all active:scale-[0.98] shadow-xl shadow-orange-200 flex items-center justify-center gap-2 group"
               >
                 確認執行評分
@@ -912,341 +1013,349 @@ const handleAddEmployee = async () => {
                   </div>
                 </div>
 
-                <div className="p-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="bg-gray-50 p-6 rounded-[2rem] border border-gray-100 flex flex-col items-center justify-center text-center group hover:bg-white hover:shadow-xl transition-all">
-                    <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mb-2 group-hover:text-orange-500 transition-colors">
-                      當前累積績效積分
-                    </p>
-
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-5xl font-black text-gray-800">
+                <div className="p-8">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">
+                        目前積分
+                      </p>
+                      <p className="text-3xl font-black text-gray-800">
                         {selectedEmp.currentPoints}
-                      </span>
-                      <span className="text-sm text-gray-400 font-bold">
-                        / {selectedEmp.initialPoints}
-                      </span>
+                      </p>
                     </div>
 
-                    <div
-                      className={`mt-4 px-4 py-1 rounded-full text-[10px] font-black ${
-                        calculateResult(
-                          selectedEmp.currentPoints,
-                          selectedEmp.lastYearLow
-                        ).bg
-                      }`}
-                    >
-                      {
-                        calculateResult(
-                          selectedEmp.currentPoints,
-                          selectedEmp.lastYearLow
-                        ).status
-                      }
+                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">
+                        初始積分
+                      </p>
+                      <p className="text-3xl font-black text-gray-800">
+                        {selectedEmp.initialPoints}
+                      </p>
                     </div>
-                  </div>
 
-                  <div className="bg-orange-50 p-6 rounded-[2rem] border border-orange-100 flex flex-col items-center justify-center text-center group hover:bg-white hover:shadow-xl transition-all">
-                    <p className="text-[10px] text-orange-400 font-black uppercase tracking-widest mb-2 group-hover:text-orange-600 transition-colors">
-                      預計年度結算獎勵
-                    </p>
+                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">
+                        已過關卡
+                      </p>
+                      <p className="text-3xl font-black text-gray-800">
+                        {selectedEmp.skillsPassed}
+                      </p>
+                    </div>
 
-                    <div className="flex items-baseline gap-1 text-orange-600">
-                      <span className="text-sm font-black">$</span>
-                      <span className="text-5xl font-black">
+                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">
+                        預估加級
+                      </p>
+                      <p className="text-3xl font-black text-green-600">
                         {calculateFinalPay(selectedEmp)}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 text-[10px] text-orange-400 font-bold flex items-center gap-1 uppercase">
-                      <TrendingUp size={12} />
-                      倍率 x{selectedEmp.multiplier?.toFixed?.(1) ?? selectedEmp.multiplier}
+                      </p>
                     </div>
                   </div>
-                </div>
 
-                {(!calculateSeniority(selectedEmp.startDate).isEligible ||
-                  selectedEmp.skillsPassed < 2) && (
-                  <div className="px-8 pb-8">
-                    <div className="bg-red-50 text-red-600 p-6 rounded-3xl border border-red-100 flex items-start gap-4">
-                      <div className="bg-red-100 p-3 rounded-2xl">
-                        <AlertTriangle size={24} />
-                      </div>
+                  <div className="bg-gray-50 rounded-3xl p-6 border border-gray-100 mb-8">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
                       <div>
-                        <p className="font-black text-sm mb-1 uppercase tracking-wider">
-                          資格尚未達成
+                        <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">
+                          年度考核結果
                         </p>
-                        <p className="text-xs font-bold leading-relaxed opacity-80">
-                          您目前過關數：{selectedEmp.skillsPassed}/2 關 且
-                          年資：{calculateSeniority(selectedEmp.startDate).text}。
-                          <br />
-                          需考過 2 關以上且年資滿一年才符合結算資格。
+                        <span
+                          className={`inline-flex px-4 py-2 rounded-2xl text-sm font-black ${calculateResult(
+                            selectedEmp.currentPoints,
+                            selectedEmp.lastYearLow
+                          ).bg}`}
+                        >
+                          {
+                            calculateResult(
+                              selectedEmp.currentPoints,
+                              selectedEmp.lastYearLow
+                            ).status
+                          }
+                        </span>
+                      </div>
+
+                      <div className="text-right">
+                        <p
+                          className={`text-xl font-black ${
+                            calculateResult(
+                              selectedEmp.currentPoints,
+                              selectedEmp.lastYearLow
+                            ).color
+                          }`}
+                        >
+                          {
+                            calculateResult(
+                              selectedEmp.currentPoints,
+                              selectedEmp.lastYearLow
+                            ).desc
+                          }
                         </p>
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
 
-              <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-gray-100">
-                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-8">
-                  <h3 className="font-black text-gray-800 text-xl flex items-center gap-3">
-                    <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center">
-                      <History size={20} />
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <h3 className="font-black text-gray-800 flex items-center gap-2">
+                      <History size={18} className="text-gray-400" />
+                      個人紀錄查詢
+                    </h3>
+
+                    <div className="flex items-center gap-2 bg-gray-50 px-4 py-2.5 rounded-2xl border border-gray-100 w-fit">
+                      <Calendar size={16} className="text-gray-400" />
+                      <input
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        className="bg-transparent text-sm font-black outline-none cursor-pointer"
+                      />
                     </div>
-                    歷史績效明細
-                  </h3>
-
-                  <div className="bg-gray-100 p-1 rounded-xl flex">
-                    <input
-                      type="month"
-                      value={selectedMonth}
-                      onChange={(e) => setSelectedMonth(e.target.value)}
-                      className="bg-transparent px-4 py-2 rounded-lg text-xs font-black outline-none cursor-pointer"
-                    />
                   </div>
-                </div>
 
-                {filteredPersonalLogs.length > 0 ? (
-                  <div className="space-y-4">
-                    {filteredPersonalLogs.map((log) => (
-                      <div
-                        key={log.id}
-                        className="flex justify-between items-center p-6 border border-gray-100 rounded-3xl bg-white shadow-sm hover:border-orange-200 transition-all hover:shadow-md group"
-                      >
-                        <div className="flex gap-4 items-center">
-                          <div
-                            className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${
-                              log.amount >= 0
-                                ? 'bg-green-50 text-green-600'
-                                : 'bg-red-50 text-red-600'
-                            }`}
-                          >
-                            {log.amount > 0 ? '+' : ''}
-                            {log.amount}
+                  {filteredPersonalLogs.length > 0 ? (
+                    <div className="space-y-3">
+                      {filteredPersonalLogs.map((log) => (
+                        <div
+                          key={log.id}
+                          className="p-4 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-between gap-4"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div
+                              className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black ${
+                                log.amount >= 0
+                                  ? 'bg-green-100 text-green-600'
+                                  : 'bg-red-100 text-red-600'
+                              }`}
+                            >
+                              {log.amount > 0 ? '+' : ''}
+                              {log.amount}
+                            </div>
+
+                            <div>
+                              <p className="text-[10px] font-black text-gray-400 uppercase">
+                                {formatDate(log.occurrenceDate)}
+                              </p>
+                              <p className="font-black text-gray-800">
+                                {log.reason}
+                              </p>
+                              {log.note && (
+                                <p className="text-xs text-gray-400 mt-1">
+                                  {log.note}
+                                </p>
+                              )}
+                            </div>
                           </div>
 
-                          <div className="text-left">
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                              {formatDate(log.occurrenceDate)}
-                              <span className="mx-1 opacity-20">|</span>
-                              審核員: {log.operator}
-                            </p>
-                            <p className="font-black text-gray-800 text-lg leading-tight mt-0.5">
-                              {log.reason}
-                            </p>
-                            {log.note && (
-                              <p className="text-xs text-gray-400 font-bold mt-1 bg-gray-50 px-3 py-1 rounded-lg inline-block">
-                                {log.note}
-                              </p>
-                            )}
+                          <div className="text-right text-[10px] font-black uppercase tracking-widest text-gray-300">
+                            {log.operator}
                           </div>
                         </div>
-
-                        <ChevronRight
-                          size={20}
-                          className="text-gray-200 group-hover:text-orange-300 transition-colors"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-20 bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
-                    <CheckCircle2
-                      size={32}
-                      className="text-gray-200 mx-auto mb-4"
-                    />
-                    <p className="text-gray-400 text-sm font-black uppercase tracking-widest">
-                      本月份暫無績效變動紀錄
-                    </p>
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 border-2 border-dashed border-gray-100 rounded-3xl">
+                      <p className="text-gray-300 text-xs font-black uppercase tracking-widest">
+                        本月份暫無個人紀錄
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         )}
 
         {activeTab === 'admin' && (
-          <div className="space-y-8 animate-in slide-in-from-right-8 duration-500">
-            <section className="bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
-              <div className="p-8 bg-gray-900 text-white flex flex-col sm:flex-row justify-between sm:items-center gap-4 relative">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl"></div>
+          <div className="space-y-6 animate-in slide-in-from-top-4 duration-300">
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                 <div>
-                  <h3 className="font-black text-2xl flex items-center gap-3 tracking-tight">
-                    <Users size={28} className="text-red-500" />
-                    門店名單總覽
-                  </h3>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">
-                    Personnel & Multi-store Management
+                  <h2 className="text-xl font-black flex items-center gap-2 text-gray-800">
+                    <Lock size={24} className="text-red-600" />
+                    管理員模式
+                  </h2>
+                  <p className="text-xs text-gray-400 font-bold mt-1">
+                    夥伴資料管理與年度考核檢視
                   </p>
                 </div>
 
                 <button
                   onClick={() => {
-                    const newEmpTemplate = {
-                      id: Date.now(),
+                    setEditingEmp({
                       name: '',
                       shop: '',
                       startDate: new Date().toISOString().split('T')[0],
                       level: '一般夥伴',
                       skillsPassed: 0,
+                      multiplier: 1,
                       initialPoints: DEFAULT_INITIAL_POINTS,
                       currentPoints: DEFAULT_INITIAL_POINTS,
-                      multiplier: 1.0,
                       lastYearLow: false
-                    };
-                    setEditingEmp(newEmpTemplate);
+                    });
                     setIsAddingNew(true);
                   }}
-                  className="bg-red-600 text-white px-8 py-3.5 rounded-2xl text-sm font-black shadow-xl shadow-red-900/20 flex items-center gap-2 hover:bg-red-500 transition active:scale-95 z-10"
+                  className="px-5 py-3 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-all shadow-lg flex items-center gap-2 w-fit"
                 >
-                  <PlusCircle size={20} />
+                  <PlusCircle size={18} />
                   註冊新夥伴
                 </button>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-gray-50/50 font-black text-[10px] text-gray-400 border-b uppercase tracking-[0.15em]">
-                    <tr>
-                      <th className="px-8 py-6">基本資料</th>
-                      <th className="px-8 py-6">當前績效</th>
-                      <th className="px-8 py-6">職級權重</th>
-                      <th className="px-8 py-6">預估獎勵</th>
-                      <th className="px-8 py-6 text-right">操作</th>
-                    </tr>
-                  </thead>
+              <div className="grid gap-4">
+                {employees.map((emp) => {
+                  const result = calculateResult(emp.currentPoints, emp.lastYearLow);
+                  const finalPay = calculateFinalPay(emp);
 
-                  <tbody className="divide-y divide-gray-50 font-bold">
-                    {employees.map((emp) => {
-                      const finalPay = calculateFinalPay(emp);
-                      const result = calculateResult(
-                        emp.currentPoints,
-                        emp.lastYearLow
-                      );
+                  return (
+                    <div
+                      key={emp.id}
+                      className="p-5 rounded-3xl border border-gray-100 bg-gray-50 hover:bg-white hover:shadow-md transition-all"
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div className="flex items-start gap-4">
+                          <div className="w-14 h-14 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+                            <Users size={26} />
+                          </div>
 
-                      return (
-                        <tr
-                          key={emp.id}
-                          className="hover:bg-gray-50/50 transition-colors group"
-                        >
-                          <td className="px-8 py-6">
-                            <div className="flex flex-col">
-                              <span className="font-black text-gray-800 text-base group-hover:text-orange-600 transition-colors">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                              <h3 className="text-xl font-black text-gray-800">
                                 {emp.name}
-                              </span>
-                              <span className="text-[10px] text-gray-400 mt-0.5">
+                              </h3>
+                              <span className="px-2.5 py-1 rounded-full bg-white border text-[10px] font-black uppercase tracking-widest text-gray-500">
                                 {emp.shop}
-                                <span className="mx-1 opacity-20">|</span>
-                                {formatDate(emp.startDate)}
                               </span>
-                            </div>
-                          </td>
-
-                          <td className="px-8 py-6">
-                            <div className="flex flex-col">
-                              <div className="flex items-baseline gap-1">
-                                <span className="text-gray-800 font-black text-lg">
-                                  {emp.currentPoints}
-                                </span>
-                                <span className="text-[10px] text-gray-400 font-normal">
-                                  / {emp.initialPoints}
-                                </span>
-                              </div>
-                              <div className={`text-[10px] font-black mt-1 ${result.color}`}>
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${result.bg}`}>
                                 {result.status}
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="px-8 py-6">
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-1.5 text-blue-600">
-                                <GraduationCap size={14} />
-                                <span className="font-black text-sm">{emp.level}</span>
-                              </div>
-                              <span className="text-[10px] text-gray-400 mt-1 uppercase font-black">
-                                倍率 x{emp.multiplier?.toFixed?.(1) ?? emp.multiplier}
                               </span>
                             </div>
-                          </td>
 
-                          <td className="px-8 py-6">
-                            <div
-                              className={`flex items-center gap-2 p-3 rounded-2xl w-fit ${
-                                finalPay > 0
-                                  ? 'bg-orange-50 text-orange-600'
-                                  : 'bg-gray-100 text-gray-300'
-                              }`}
-                            >
-                              <DollarSign size={14} />
-                              <span className="font-black text-lg">{finalPay}</span>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500 font-bold">
+                              <span>到職：{formatDate(emp.startDate)}</span>
+                              <span>年資：{calculateSeniority(emp.startDate).text}</span>
+                              <span>職級：{emp.level}</span>
+                              <span>關卡：{emp.skillsPassed}</span>
+                              <span>倍率：{emp.multiplier}</span>
                             </div>
-                          </td>
+                          </div>
+                        </div>
 
-                          <td className="px-8 py-6 text-right">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                onClick={() => {
-                                  setEditingEmp({
-                                    ...emp,
-                                    startDate:
-                                      typeof emp.startDate === 'string'
-                                        ? emp.startDate
-                                        : formatDate(emp.startDate)
-                                  });
-                                  setIsAddingNew(false);
-                                }}
-                                className="p-3 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
-                              >
-                                <Edit3 size={18} />
-                              </button>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:min-w-[420px]">
+                          <div className="bg-white rounded-2xl p-3 border border-gray-100">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                              目前積分
+                            </p>
+                            <p className="text-xl font-black text-gray-800 mt-1">
+                              {emp.currentPoints}
+                            </p>
+                          </div>
 
-                              <button
-                                onClick={() => setDeletingEmpId(emp.id)}
-                                className="p-3 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          <div className="bg-white rounded-2xl p-3 border border-gray-100">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                              初始積分
+                            </p>
+                            <p className="text-xl font-black text-gray-800 mt-1">
+                              {emp.initialPoints}
+                            </p>
+                          </div>
+
+                          <div className="bg-white rounded-2xl p-3 border border-gray-100">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                              預估加級
+                            </p>
+                            <p className="text-xl font-black text-green-600 mt-1">
+                              {finalPay}
+                            </p>
+                          </div>
+
+                          <div className="bg-white rounded-2xl p-3 border border-gray-100">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                              年度結果
+                            </p>
+                            <p className={`text-lg font-black mt-1 ${result.color}`}>
+                              {result.status.split(' ')[0]}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-end gap-2 mt-5">
+                        <button
+                          onClick={() => {
+                            setEditingEmp({
+                              ...emp,
+                              startDate:
+                                typeof emp.startDate === 'string'
+                                  ? emp.startDate
+                                  : formatDate(emp.startDate)
+                            });
+                            setIsAddingNew(false);
+                          }}
+                          className="px-4 py-2.5 rounded-2xl bg-white border border-gray-200 font-black text-gray-700 hover:border-orange-300 hover:text-orange-600 transition-all flex items-center gap-2"
+                        >
+                          <Edit3 size={16} />
+                          編輯
+                        </button>
+
+                        <button
+                          onClick={() => setDeletingEmpId(emp.id)}
+                          className="px-4 py-2.5 rounded-2xl bg-red-50 border border-red-100 font-black text-red-600 hover:bg-red-100 transition-all flex items-center gap-2"
+                        >
+                          <Trash2 size={16} />
+                          刪除
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {employees.length === 0 && (
+                  <div className="text-center py-14 border-2 border-dashed border-gray-100 rounded-3xl">
+                    <p className="text-gray-300 text-xs font-black uppercase tracking-widest">
+                      目前尚無夥伴資料
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
-
-            {deletingEmpId && (
-              <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
-                <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center">
-                  <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <AlertTriangle size={32} />
-                  </div>
-                  <h3 className="text-xl font-black mb-2">確定要刪除夥伴？</h3>
-                  <p className="text-gray-400 text-sm mb-6">
-                    此操作無法復原，該夥伴的所有績效積分紀錄都將被清除。
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => setDeletingEmpId(null)}
-                      className="py-3 px-4 bg-gray-100 rounded-xl font-black hover:bg-gray-200 transition-colors"
-                    >
-                      取消
-                    </button>
-                    <button
-                      onClick={() => deleteEmployee(deletingEmpId)}
-                      className="py-3 px-4 bg-red-600 text-white rounded-xl font-black hover:bg-red-700 transition-colors"
-                    >
-                      確定刪除
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </main>
+
+      {deletingEmpId && (
+        <div className="fixed inset-0 z-[800] bg-gray-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-[2rem] shadow-2xl p-8">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center">
+                <AlertTriangle size={24} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black">確認刪除夥伴</h3>
+                <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">
+                  This action cannot be undone
+                </p>
+              </div>
+            </div>
+
+            <p className="text-gray-500 font-medium mb-6">
+              刪除後將無法復原，確定要刪除這位夥伴資料嗎？
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setDeletingEmpId(null)}
+                className="py-3 rounded-2xl bg-gray-100 text-gray-700 font-black hover:bg-gray-200 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => deleteEmployee(deletingEmpId)}
+                className="py-3 rounded-2xl bg-red-600 text-white font-black hover:bg-red-700 transition-colors"
+              >
+                確認刪除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
