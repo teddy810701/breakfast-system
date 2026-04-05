@@ -27,7 +27,33 @@ import {
 const App = () => {
   const DEFAULT_INITIAL_POINTS = 600;
   const GLOBAL_BASE_BONUS = 600;
+const handleAddEmployee = async () => {
+  if (!editingEmp?.name?.trim()) {
+    alert("請輸入姓名");
+    return;
+  }
 
+  const newEmployee = {
+    name: editingEmp.name.trim(),
+    shop: editingEmp.shop || "",
+    startDate: editingEmp.startDate || new Date().toISOString().split('T')[0],
+    currentPoints: 600,
+    initialPoints: 600,
+    lastYearLow: editingEmp.lastYearLow || false,
+    level: editingEmp.level || "未設定",
+    multiplier: editingEmp.multiplier ?? 1,
+    skillsPassed: editingEmp.skillsPassed ?? 0,
+  };
+
+  try {
+    await addDoc(collection(db, "employees"), newEmployee);
+    alert("✅ 已同步到 Firebase");
+    setEditingEmp(null);
+  } catch (error) {
+    console.error("新增員工失敗:", error);
+    alert("❌ 新增失敗");
+  }
+};
   const PERFORMANCE_ITEMS = {
     penalty: [
       { label: '遲到 (預設1分/可修改)', val: -1 },
@@ -557,12 +583,12 @@ const App = () => {
               </label>
 
               <button
-                onClick={handleSaveEmpEdit}
-                className="w-full py-5 bg-gray-900 text-white rounded-2xl font-black text-lg hover:bg-orange-600 transition-all shadow-xl shadow-gray-200 flex items-center justify-center gap-2"
-              >
-                <Save size={20} />
-                儲存夥伴資料
-              </button>
+  onClick={isAddingNew ? handleAddEmployee : handleSaveEmpEdit}
+  className="w-full py-5 bg-gray-900 text-white rounded-2xl font-black text-lg hover:bg-orange-600 transition-all shadow-xl flex items-center justify-center gap-2"
+>
+  <Save size={20} />
+  {isAddingNew ? '新增夥伴' : '儲存夥伴資料'}
+</button>
             </div>
           </div>
         </div>
