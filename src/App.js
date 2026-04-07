@@ -1765,7 +1765,7 @@ const App = () => {
         {activeTab === 'manager' && (
           <div className="space-y-6 animate-in slide-in-from-top-4 duration-300">
             <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
                 <div>
                   <h2 className="text-xl font-black flex items-center gap-2 text-gray-800">
                     <Store size={24} className="text-orange-600" />
@@ -1778,15 +1778,130 @@ const App = () => {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 bg-orange-50 px-4 py-2.5 rounded-2xl border border-orange-100 w-fit">
-                  <Calendar size={16} className="text-orange-600" />
-                  <input
-                    type="date"
-                    value={occurrenceDate}
-                    onChange={(e) => setOccurrenceDate(e.target.value)}
-                    className="bg-transparent text-sm font-black text-orange-700 outline-none cursor-pointer"
-                  />
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingEmp({
+                        name: '',
+                        shop: getStoreLabel(currentStoreId),
+                        startDate: new Date().toISOString().split('T')[0],
+                        currentPoints: DEFAULT_INITIAL_POINTS,
+                        initialPoints: DEFAULT_INITIAL_POINTS,
+                        lastYearLow: false,
+                        level: '一般夥伴',
+                        multiplier: 1,
+                        skillsPassed: 0,
+                        storeId: currentStoreId
+                      });
+                      setIsAddingNew(true);
+                    }}
+                    className="px-4 py-3 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2"
+                  >
+                    <PlusCircle size={18} />
+                    新增員工
+                  </button>
+
+                  <div className="flex items-center gap-2 bg-orange-50 px-4 py-2.5 rounded-2xl border border-orange-100 w-fit">
+                    <Calendar size={16} className="text-orange-600" />
+                    <input
+                      type="date"
+                      value={occurrenceDate}
+                      onChange={(e) => setOccurrenceDate(e.target.value)}
+                      className="bg-transparent text-sm font-black text-orange-700 outline-none cursor-pointer"
+                    />
+                  </div>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+                {sortedVisibleEmployees.map((emp) => {
+                  const assessment = getEmployeeAssessment(emp);
+                  const seniority = calculateSeniority(emp.startDate);
+                  const warnings = getEmployeeWarnings(emp);
+
+                  return (
+                    <div
+                      key={`manager-overview-${emp.id}`}
+                      className={`rounded-[2rem] border p-5 transition-all ${
+                        selectedEmpId === emp.id
+                          ? 'border-orange-300 bg-orange-50 shadow-lg shadow-orange-100'
+                          : 'border-gray-100 bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                            {getStoreLabel(emp.storeId)}
+                          </p>
+                          <h3 className="text-lg font-black text-gray-800 mt-1">{emp.name}</h3>
+                          <p className="text-xs text-gray-400 font-bold mt-1">
+                            {emp.level || '一般夥伴'}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-black ${
+                            warnings.length > 0
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-green-100 text-green-700'
+                          }`}
+                        >
+                          {warnings.length > 0 ? '需要注意' : '狀態穩定'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">今年分數</p>
+                          <p className="text-xl font-black text-gray-800 mt-2">{assessment.thisYearPoints}</p>
+                        </div>
+                        <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">年資</p>
+                          <p className="text-base font-black text-gray-800 mt-2">{seniority.text}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 mb-4">
+                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
+                          <span>技能通過</span>
+                          <span>{emp.skillsPassed || 0}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
+                          <span>年度狀態</span>
+                          <span className={`px-2.5 py-1 rounded-full text-xs ${assessment.result.bg}`}>
+                            {assessment.result.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {warnings.length > 0 ? (
+                          warnings.slice(0, 3).map((warning) => (
+                            <span
+                              key={warning.key}
+                              className={`px-2.5 py-1 rounded-full border text-[11px] font-black ${getWarningBadgeClass(warning.level)}`}
+                            >
+                              {warning.label}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full border text-[11px] font-black bg-green-50 text-green-700 border-green-100">
+                            本月狀況正常
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmpId(emp.id)}
+                        className="w-full py-3 rounded-2xl bg-white border border-gray-200 text-gray-700 font-black hover:border-orange-300 hover:text-orange-600 transition-colors"
+                      >
+                        {selectedEmpId === emp.id ? '目前選取中' : '選取這位夥伴'}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="flex gap-3 mb-10 overflow-x-auto pb-4">
@@ -2251,9 +2366,10 @@ const App = () => {
                                     currentPoints: emp.assessment.thisYearPoints
                                   })
                                 }
-                                className="w-10 h-10 rounded-2xl bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
+                                className="px-3 h-10 rounded-2xl bg-gray-50 hover:bg-gray-100 inline-flex items-center justify-center gap-2 text-gray-700 font-black transition-colors"
                               >
                                 <Edit3 size={16} />
+                                編輯
                               </button>
                               <button
                                 type="button"
