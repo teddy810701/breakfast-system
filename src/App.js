@@ -480,7 +480,12 @@ const App = () => {
         note,
         occurrenceDate,
         timestamp: new Date().toISOString(),
-        name: emp.name
+        name: emp.name,
+        operator: currentManager?.name || '管理員',
+        operatorKey: currentManager?.key || 'admin',
+        operatorStoreId: currentManager?.storeId || emp.storeId,
+        operatorStoreLabel: getStoreLabel(currentManager?.storeId || emp.storeId),
+        actionType: 'score_change'
       });
 
       setNote('');
@@ -560,6 +565,17 @@ const App = () => {
     .filter((log) => log.empId === selectedEmpId)
     .filter((log) => !currentStoreId || log.storeId === currentStoreId)
     .slice(0, 10);
+
+  const adminManagerLogs = useMemo(() => {
+    return [...logs]
+      .filter((log) => log.operatorKey === 'managerA' || log.operatorKey === 'managerB')
+      .sort((a, b) => {
+        const aTime = toJsDate(a.timestamp || a.occurrenceDate)?.getTime() || 0;
+        const bTime = toJsDate(b.timestamp || b.occurrenceDate)?.getTime() || 0;
+        return bTime - aTime;
+      })
+      .slice(0, 80);
+  }, [logs]);
 
   const sortedEmployees = useMemo(() => {
     return [...employees].sort((a, b) => {
@@ -1426,64 +1442,114 @@ const App = () => {
               </div>
 
               <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {sortedEmployees.map((emp) => {
-                    const assessment = getEmployeeAssessment(emp);
-                    const warnings = getEmployeeWarnings(emp);
+                {sortedEmployees.map((emp) => {
+                  const assessment = getEmployeeAssessment(emp);
+                  const warnings = getEmployeeWarnings(emp);
 
-                    return (
-                      <button
-                        key={emp.id}
-                        onClick={() => {
-                          setSelectedEmpId(selectedEmpId === emp.id ? null : emp.id);
-                          setSelectedMonth(new Date().toISOString().substring(0, 7));
-                        }}
-                        className={`text-left p-5 rounded-3xl border transition-all ${
-                          selectedEmpId === emp.id
-                            ? 'border-orange-400 bg-orange-50 shadow-lg shadow-orange-100'
-                            : warnings.some((w) => w.level === 'danger')
-                            ? 'border-red-200 bg-red-50/40 hover:border-red-300'
-                            : warnings.length > 0
-                            ? 'border-yellow-200 bg-yellow-50/40 hover:border-yellow-300'
-                            : 'border-gray-100 bg-gray-50 hover:border-orange-200 hover:bg-white'
-                        }`}
-                        type="button"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-lg font-black text-gray-800">{emp.name}</p>
-                            <p className="text-xs text-gray-400 font-bold mt-1">
-                              點擊查看詳細內容
-                            </p>
+                  return (
+                    <div
+                      key={emp.id}
+                      className={`p-5 rounded-3xl border transition-all ${
+                        warnings.some((w) => w.level === 'danger')
+                          ? 'border-red-200 bg-red-50/40'
+                          : warnings.length > 0
+                          ? 'border-yellow-200 bg-yellow-50/40'
+                          : 'border-gray-100 bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
+                        <div className="flex-1">
+                          <div className="flex items-center flex-wrap gap-2 mb-3">
+                            <h3 className="text-xl font-black text-gray-800">
+                              {emp.name}
+                            </h3>
+
+                            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-400">
+                              {emp.shop || '未設定店鋪'}
+                            </span>
+
+                            <span
+                              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${assessment.result.bg}`}
+                            >
+                              {assessment.result.status}
+                            </span>
+
+                            {warnings.slice(0, 4).map((warning) => (
+                              <span
+                                key={warning.key}
+                                className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${getWarningBadgeClass(
+                                  warning.level
+                                )}`}
+                              >
+                                {warning.label}
+                              </span>
+                            ))}
                           </div>
 
-                          <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500">
-                            {emp.shop || '未設定店鋪'}
-                          </span>
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
+                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                                今年分數
+                              </p>
+                              <p className="text-2xl font-black mt-2 text-gray-800">
+                                {assessment.thisYearPoints}
+                              </p>
+                            </div>
+
+                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
+                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                                去年分數
+                              </p>
+                              <p className="text-2xl font-black mt-2 text-gray-800">
+                                {assessment.lastYearPoints}
+                              </p>
+                            </div>
+
+                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
+                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                                年資
+                              </p>
+                              <p className="text-xl font-black mt-2 text-gray-800">
+                                {calculateSeniority(emp.startDate).text}
+                              </p>
+                            </div>
+
+                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
+                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                                已過關卡
+                              </p>
+                              <p className="text-2xl font-black mt-2 text-gray-800">
+                                {emp.skillsPassed}
+                              </p>
+                            </div>
+
+                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
+                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                                預估加級
+                              </p>
+                              <p className="text-2xl font-black mt-2 text-orange-600">
+                                {calculateFinalPay(emp)}
+                              </p>
+                            </div>
+                          </div>
                         </div>
 
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <span
-                            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${assessment.result.bg}`}
+                        <div className="xl:w-[140px]">
+                          <button
+                            onClick={() => {
+                              setSelectedEmpId(emp.id);
+                              setSelectedMonth(new Date().toISOString().substring(0, 7));
+                            }}
+                            className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 text-gray-700 font-black hover:border-orange-300 hover:text-orange-600 transition-colors"
+                            type="button"
                           >
-                            {assessment.result.status}
-                          </span>
-
-                          {warnings.slice(0, 2).map((warning) => (
-                            <span
-                              key={warning.key}
-                              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${getWarningBadgeClass(
-                                warning.level
-                              )}`}
-                            >
-                              {warning.label}
-                            </span>
-                          ))}
+                            查看詳情
+                          </button>
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                      </div>
+                    </div>
+                  );
+                })}
 
                 {sortedEmployees.length === 0 && (
                   <div className="p-8 rounded-3xl border border-dashed border-gray-200 text-center bg-gray-50 text-gray-400 font-bold">
@@ -2131,6 +2197,75 @@ const App = () => {
             </section>
 
             <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between gap-3 mb-5">
+                <div>
+                  <h3 className="font-black text-gray-800 flex items-center gap-2">
+                    <History size={18} className="text-red-500" />
+                    兩位店長操作歷程
+                  </h3>
+                  <p className="text-xs text-gray-400 font-bold mt-1">
+                    管理員可直接查看兩間店店長的所有加扣分操作紀錄
+                  </p>
+                </div>
+                <span className="text-[10px] text-gray-300 font-black uppercase tracking-widest">
+                  最新 {adminManagerLogs.length} 筆
+                </span>
+              </div>
+
+              {adminManagerLogs.length > 0 ? (
+                <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                  {adminManagerLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="p-4 rounded-2xl bg-gray-50 border border-gray-100 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black shrink-0 ${
+                            Number(log.amount) >= 0
+                              ? 'bg-green-100 text-green-600'
+                              : 'bg-red-100 text-red-600'
+                          }`}
+                        >
+                          {Number(log.amount) > 0 ? '+' : ''}
+                          {Number(log.amount) || 0}
+                        </div>
+
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-black text-gray-800">
+                              {log.operator || '店長'} → {log.name || '未指定員工'}
+                            </p>
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500">
+                              {log.operatorStoreLabel || getStoreLabel(log.operatorStoreId || log.storeId)}
+                            </span>
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500">
+                              {getStoreLabel(log.storeId)}
+                            </span>
+                          </div>
+
+                          <p className="text-sm font-black text-gray-700 mt-2">
+                            {log.reason || '未填寫原因'}
+                          </p>
+
+                          <p className="text-xs text-gray-400 font-bold mt-1 leading-6">
+                            發生日：{formatDate(log.occurrenceDate)}　
+                            建立時間：{formatDate(log.timestamp)}　
+                            {log.note ? `備註：${log.note}` : '無備註'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-8 text-center text-gray-400 font-bold">
+                  目前尚無店長操作歷程
+                </div>
+              )}
+            </section>
+
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
               <h3 className="font-black text-gray-800 mb-4">正式上線前檢查重點</h3>
               <div className="grid md:grid-cols-2 gap-4 text-sm font-bold text-gray-600">
                 <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 leading-7">
@@ -2141,7 +2276,7 @@ const App = () => {
                 <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 leading-7">
                   <div>4. 這版已把新增 / 編輯 / 刪除 / 加扣分都補上錯誤提示。</div>
                   <div>5. 管理設定已收進齒輪，不會擠在主畫面。</div>
-                  <div>6. 管理員首頁直接看全員狀態，適合上線營運。</div>
+                  <div>6. 管理員首頁直接看全員狀態，也能追蹤兩位店長操作歷程。</div>
                 </div>
               </div>
             </section>
