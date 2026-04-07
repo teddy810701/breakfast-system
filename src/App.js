@@ -507,6 +507,22 @@ const App = () => {
     }
 
     try {
+      await addDoc(collection(db, 'stores', emp.storeId, 'logs'), {
+        empId: emp.id,
+        name: emp.name,
+        storeId: emp.storeId,
+        reason: '刪除員工資料',
+        amount: 0,
+        note: `${emp.name} 的員工資料已被刪除`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        operator: currentManager?.name || '管理員',
+        operatorKey: currentManager?.key || 'admin',
+        operatorStoreId: currentManager?.storeId || emp.storeId,
+        operatorStoreLabel: getStoreLabel(currentManager?.storeId || emp.storeId),
+        actionType: 'delete_employee'
+      });
+
       await deleteDoc(
         doc(db, 'stores', emp.storeId, 'employees', id)
       );
