@@ -448,11 +448,26 @@ const App = () => {
     }
 
     try {
-      await addDoc(collection(db, 'stores', storeId, 'employees'), {
+      const newEmpRef = await addDoc(collection(db, 'stores', storeId, 'employees'), {
         ...editingEmp,
         storeId,
         shop: getStoreLabel(storeId),
         currentPoints: editingEmp.initialPoints || DEFAULT_INITIAL_POINTS
+      });
+
+      await addDoc(collection(db, 'stores', storeId, 'logs'), {
+        empId: newEmpRef.id,
+        amount: 0,
+        reason: '新增員工資料',
+        note: `${editingEmp.name} 已被新增`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        name: editingEmp.name,
+        operator: currentManager?.name || '管理員',
+        operatorKey: currentManager?.key || 'admin',
+        operatorStoreId: currentManager?.storeId || storeId,
+        operatorStoreLabel: getStoreLabel(currentManager?.storeId || storeId),
+        actionType: 'create_employee'
       });
 
       setEditingEmp(null);
@@ -495,6 +510,41 @@ const App = () => {
     } catch (error) {
       console.error('新增紀錄失敗:', error);
       showMessage('新增紀錄失敗', 'error');
+    }
+  };
+
+  const handleDeleteScoreLog = async (log) => {
+    if (!log?.id || !log?.storeId) {
+      showMessage('找不到評分紀錄', 'error');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'stores', log.storeId, 'logs'), {
+        empId: log.empId || 'UNKNOWN',
+        amount: 0,
+        reason: '刪除加扣分紀錄',
+        note: `已刪除「${log.reason || '未命名項目'}」${Number(log.amount) || 0} 分`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        name: log.name || '未知員工',
+        operator: currentManager?.name || '管理員',
+        operatorKey: currentManager?.key || 'admin',
+        operatorStoreId: currentManager?.storeId || log.storeId,
+        operatorStoreLabel: getStoreLabel(currentManager?.storeId || log.storeId),
+        actionType: 'delete_score_change',
+        deletedLogId: log.id,
+        deletedReason: log.reason || '',
+        deletedAmount: Number(log.amount) || 0,
+        deletedOccurrenceDate: log.occurrenceDate || '',
+        deletedOriginalTimestamp: log.timestamp || ''
+      });
+
+      await deleteDoc(doc(db, 'stores', log.storeId, 'logs', log.id));
+      showMessage('加扣分紀錄已刪除', 'success');
+    } catch (error) {
+      console.error('刪除評分紀錄失敗:', error);
+      showMessage('刪除評分紀錄失敗', 'error');
     }
   };
 
@@ -550,6 +600,21 @@ const App = () => {
           shop: getStoreLabel(editingEmp.storeId)
         }
       );
+
+      await addDoc(collection(db, 'stores', editingEmp.storeId, 'logs'), {
+        empId: editingEmp.id,
+        amount: 0,
+        reason: '修改員工資料',
+        note: `${editingEmp.name} 資料已被修改`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        name: editingEmp.name,
+        operator: currentManager?.name || '管理員',
+        operatorKey: currentManager?.key || 'admin',
+        operatorStoreId: editingEmp.storeId,
+        operatorStoreLabel: getStoreLabel(editingEmp.storeId),
+        actionType: 'edit_employee'
+      });
 
       setEditingEmp(null);
       showMessage('夥伴資料已更新', 'success');
@@ -1920,14 +1985,15 @@ const App = () => {
 
                             <button
                               onClick={() => {
-                                const targetEmp = employees.find(
-                                  (emp) => emp.id === log.empId
-                                );
-                                if (!targetEmp || !log.storeId) return;
-
-                                deleteDoc(doc(db, 'stores', log.storeId, 'logs', log.id));
+                                if (log.actionType !== 'score_change') return;
+                                handleDeleteScoreLog(log);
                               }}
-                              className="w-11 h-11 rounded-2xl bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
+                              className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-colors ${
+                                log.actionType === 'score_change'
+                                  ? 'bg-gray-50 hover:bg-gray-100 text-gray-500'
+                                  : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                              }`}
+                              title={log.actionType === 'score_change' ? '刪除這筆加扣分並留下紀錄' : '只有原始加扣分紀錄可刪除'}
                               type="button"
                             >
                               <RotateCcw size={18} />
