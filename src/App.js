@@ -25,7 +25,8 @@ import {
   Search,
   ArrowRight,
   RotateCcw,
-  Save
+  Save,
+  Settings
 } from 'lucide-react';
 
 const App = () => {
@@ -93,6 +94,10 @@ const App = () => {
     managerBPassword: ''
   });
   const [savingPassword, setSavingPassword] = useState(false);
+  const [showAdminSettings, setShowAdminSettings] = useState(false);
+  const [adminSearch, setAdminSearch] = useState('');
+  const [adminStoreFilter, setAdminStoreFilter] = useState('all');
+  const [adminStatusFilter, setAdminStatusFilter] = useState('all');
 
   const getStoreLabel = useCallback(
     (storeId) => STORE_CONFIG[storeId]?.label || storeId || '未設定店鋪',
@@ -434,57 +439,103 @@ const App = () => {
     }
 
     const storeId =
-      activeTab === 'manager' ? currentStoreId : 'storeA';
+      editingEmp?.storeId ||
+      (activeTab === 'manager' ? currentStoreId : null);
 
-    await addDoc(collection(db, 'stores', storeId, 'employees'), {
-      ...editingEmp,
-      currentPoints: editingEmp.initialPoints || DEFAULT_INITIAL_POINTS
-    });
+    if (!storeId) {
+      showMessage('請先選擇所屬分店', 'error');
+      return;
+    }
 
-    setEditingEmp(null);
-    setIsAddingNew(false);
+    try {
+      await addDoc(collection(db, 'stores', storeId, 'employees'), {
+        ...editingEmp,
+        storeId,
+        shop: getStoreLabel(storeId),
+        currentPoints: editingEmp.initialPoints || DEFAULT_INITIAL_POINTS
+      });
+
+      setEditingEmp(null);
+      setIsAddingNew(false);
+      showMessage('夥伴資料已新增', 'success');
+    } catch (error) {
+      console.error('新增夥伴失敗:', error);
+      showMessage('新增夥伴失敗', 'error');
+    }
   };
 
   // ===== 加扣分 =====
   const handlePointChange = async (empId, amount, reason) => {
     const emp = employees.find((e) => e.id === empId);
+    if (!emp) {
+      showMessage('找不到員工資料', 'error');
+      return;
+    }
 
-    await addDoc(collection(db, 'stores', emp.storeId, 'logs'), {
-      empId,
-      amount,
-      reason,
-      note,
-      occurrenceDate,
-      timestamp: new Date().toISOString(),
-      name: emp.name
-    });
+    try {
+      await addDoc(collection(db, 'stores', emp.storeId, 'logs'), {
+        empId,
+        amount,
+        reason,
+        note,
+        occurrenceDate,
+        timestamp: new Date().toISOString(),
+        name: emp.name
+      });
 
-    setNote('');
-    setSelectedItemLabel('');
-    setCustomPoints(0);
+      setNote('');
+      setSelectedItemLabel('');
+      setCustomPoints(0);
+      showMessage('紀錄已新增', 'success');
+    } catch (error) {
+      console.error('新增紀錄失敗:', error);
+      showMessage('新增紀錄失敗', 'error');
+    }
   };
 
   // ===== 刪除員工 =====
   const deleteEmployee = async (id) => {
     const emp = employees.find((e) => e.id === id);
+    if (!emp) {
+      showMessage('找不到員工資料', 'error');
+      return;
+    }
 
-    await deleteDoc(
-      doc(db, 'stores', emp.storeId, 'employees', id)
-    );
+    try {
+      await deleteDoc(
+        doc(db, 'stores', emp.storeId, 'employees', id)
+      );
 
-    setDeletingEmpId(null);
+      setDeletingEmpId(null);
+      showMessage('夥伴資料已刪除', 'success');
+    } catch (error) {
+      console.error('刪除夥伴失敗:', error);
+      showMessage('刪除夥伴失敗', 'error');
+    }
   };
 
   // ===== 更新員工 =====
   const handleSaveEmpEdit = async () => {
-    await updateDoc(
-      doc(db, 'stores', editingEmp.storeId, 'employees', editingEmp.id),
-      {
-        ...editingEmp
-      }
-    );
+    if (!editingEmp?.storeId || !editingEmp?.id) {
+      showMessage('員工資料不完整', 'error');
+      return;
+    }
 
-    setEditingEmp(null);
+    try {
+      await updateDoc(
+        doc(db, 'stores', editingEmp.storeId, 'employees', editingEmp.id),
+        {
+          ...editingEmp,
+          shop: getStoreLabel(editingEmp.storeId)
+        }
+      );
+
+      setEditingEmp(null);
+      showMessage('夥伴資料已更新', 'success');
+    } catch (error) {
+      console.error('更新夥伴失敗:', error);
+      showMessage('更新夥伴失敗', 'error');
+    }
   };
   const visibleEmployees = useMemo(() => {
     if (activeTab === 'manager' && currentStoreId) {
@@ -663,6 +714,83 @@ const App = () => {
     storeA: employees.filter((emp) => emp.storeId === 'storeA').length,
     storeB: employees.filter((emp) => emp.storeId === 'storeB').length
   };
+
+  const adminEmployeeRows = useMemo(() => {
+    return sortedEmployees
+      .map((emp) => {
+        const assessment = getEmployeeAssessment(emp);
+        const seniority = calculateSeniority(emp.startDate);
+        const warnings = getEmployeeWarnings(emp);
+        const monthlyStats = getEmployeeMonthlyWarningStats(emp.id);
+        const finalPay = calculateFinalPay(emp);
+
+        return {
+          ...emp,
+          assessment,
+          seniority,
+          warnings,
+          monthlyStats,
+          finalPay
+        };
+      })
+      .filter((emp) => {
+        const keyword = adminSearch.trim().toLowerCase();
+        const matchesSearch =
+          !keyword ||
+          String(emp.name || '').toLowerCase().includes(keyword) ||
+          String(emp.level || '').toLowerCase().includes(keyword) ||
+          String(getStoreLabel(emp.storeId) || '').toLowerCase().includes(keyword);
+
+        const matchesStore =
+          adminStoreFilter === 'all' || emp.storeId === adminStoreFilter;
+
+        const statusCode = String(emp.assessment?.result?.status || '').charAt(0);
+        const matchesStatus =
+          adminStatusFilter === 'all' || statusCode === adminStatusFilter;
+
+        return matchesSearch && matchesStore && matchesStatus;
+      });
+  }, [
+    sortedEmployees,
+    getEmployeeAssessment,
+    calculateFinalPay,
+    adminSearch,
+    adminStoreFilter,
+    adminStatusFilter,
+    getStoreLabel
+  ]);
+
+  const adminOverview = useMemo(() => {
+    const summary = {
+      total: employees.length,
+      warning: 0,
+      lateRisk: 0,
+      highRisk: 0,
+      statusA: 0,
+      statusB: 0,
+      statusC: 0,
+      statusD: 0
+    };
+
+    employees.forEach((emp) => {
+      const warnings = getEmployeeWarnings(emp);
+      const assessment = getEmployeeAssessment(emp);
+      const stats = getEmployeeMonthlyWarningStats(emp.id);
+      const status = String(assessment?.result?.status || '');
+
+      if (warnings.length > 0) summary.warning += 1;
+      if (stats.lateCount >= 2) summary.lateRisk += 1;
+      if (stats.majorMistakeCount >= 2 || status.includes('C') || status.includes('D')) {
+        summary.highRisk += 1;
+      }
+      if (status.includes('A')) summary.statusA += 1;
+      if (status.includes('B')) summary.statusB += 1;
+      if (status.includes('C')) summary.statusC += 1;
+      if (status.includes('D')) summary.statusD += 1;
+    });
+
+    return summary;
+  }, [employees, getEmployeeAssessment]);
 
   const savePasswords = async () => {
     try {
@@ -850,22 +978,26 @@ const App = () => {
                     所屬門店
                   </label>
                   <select
-                    value={editingEmp.shop}
+                    value={editingEmp.storeId || ''}
                     onChange={(e) =>
-                      setEditingEmp({ ...editingEmp, shop: e.target.value })
+                      setEditingEmp({
+                        ...editingEmp,
+                        storeId: e.target.value,
+                        shop: getStoreLabel(e.target.value)
+                      })
                     }
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold appearance-none"
                     disabled={activeTab === 'manager'}
                   >
                     {activeTab === 'manager' ? (
-                      <option value={getStoreLabel(currentStoreId)}>
+                      <option value={currentStoreId || ''}>
                         {getStoreLabel(currentStoreId)}
                       </option>
                     ) : (
                       <>
                         <option value="">選擇店鋪</option>
-                        <option value="西螺文昌店">西螺文昌店</option>
-                        <option value="斗南站前店">斗南站前店</option>
+                        <option value="storeA">西螺文昌店</option>
+                        <option value="storeB">斗南站前店</option>
                       </>
                     )}
                   </select>
@@ -1015,6 +1147,126 @@ const App = () => {
               >
                 <Save size={20} />
                 {isAddingNew ? '新增夥伴' : '儲存夥伴資料'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAdminSettings && activeTab === 'admin' && (
+        <div className="fixed inset-0 z-[780] flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-[2rem] w-full max-w-3xl shadow-2xl border border-gray-100">
+            <div className="p-6 sm:p-8 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-2xl font-black text-gray-800 flex items-center gap-2">
+                  <Settings size={22} className="text-orange-600" />
+                  管理設定
+                </h3>
+                <p className="text-xs text-gray-400 font-bold mt-1">
+                  密碼與店長名稱統一收在齒輪裡，正式上線更乾淨
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminSettings(false)}
+                className="w-11 h-11 rounded-full border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 sm:p-8 space-y-5">
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                  管理員密碼
+                </label>
+                <input
+                  type="text"
+                  value={passwordPanel.adminPassword}
+                  onChange={(e) =>
+                    setPasswordPanel((prev) => ({
+                      ...prev,
+                      adminPassword: e.target.value
+                    }))
+                  }
+                  className="w-full mt-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:border-orange-500 outline-none font-bold"
+                />
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="bg-gray-50 rounded-[1.5rem] p-5 border border-gray-100">
+                  <p className="text-sm font-black text-gray-800 mb-4">
+                    店長 A / {getStoreLabel('storeA')}
+                  </p>
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={passwordPanel.managerAName}
+                      onChange={(e) =>
+                        setPasswordPanel((prev) => ({
+                          ...prev,
+                          managerAName: e.target.value
+                        }))
+                      }
+                      placeholder="店長名稱"
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
+                    />
+                    <input
+                      type="text"
+                      value={passwordPanel.managerAPassword}
+                      onChange={(e) =>
+                        setPasswordPanel((prev) => ({
+                          ...prev,
+                          managerAPassword: e.target.value
+                        }))
+                      }
+                      placeholder="店長密碼"
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-[1.5rem] p-5 border border-gray-100">
+                  <p className="text-sm font-black text-gray-800 mb-4">
+                    店長 B / {getStoreLabel('storeB')}
+                  </p>
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={passwordPanel.managerBName}
+                      onChange={(e) =>
+                        setPasswordPanel((prev) => ({
+                          ...prev,
+                          managerBName: e.target.value
+                        }))
+                      }
+                      placeholder="店長名稱"
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
+                    />
+                    <input
+                      type="text"
+                      value={passwordPanel.managerBPassword}
+                      onChange={(e) =>
+                        setPasswordPanel((prev) => ({
+                          ...prev,
+                          managerBPassword: e.target.value
+                        }))
+                      }
+                      placeholder="店長密碼"
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={savePasswords}
+                disabled={savingPassword}
+                className="w-full py-4 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                type="button"
+              >
+                <Save size={18} />
+                {savingPassword ? '儲存中...' : '儲存管理設定'}
               </button>
             </div>
           </div>
@@ -1174,114 +1426,64 @@ const App = () => {
               </div>
 
               <div className="space-y-4">
-                {sortedEmployees.map((emp) => {
-                  const assessment = getEmployeeAssessment(emp);
-                  const warnings = getEmployeeWarnings(emp);
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {sortedEmployees.map((emp) => {
+                    const assessment = getEmployeeAssessment(emp);
+                    const warnings = getEmployeeWarnings(emp);
 
-                  return (
-                    <div
-                      key={emp.id}
-                      className={`p-5 rounded-3xl border transition-all ${
-                        warnings.some((w) => w.level === 'danger')
-                          ? 'border-red-200 bg-red-50/40'
-                          : warnings.length > 0
-                          ? 'border-yellow-200 bg-yellow-50/40'
-                          : 'border-gray-100 bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
-                        <div className="flex-1">
-                          <div className="flex items-center flex-wrap gap-2 mb-3">
-                            <h3 className="text-xl font-black text-gray-800">
-                              {emp.name}
-                            </h3>
-
-                            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-400">
-                              {emp.shop || '未設定店鋪'}
-                            </span>
-
-                            <span
-                              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${assessment.result.bg}`}
-                            >
-                              {assessment.result.status}
-                            </span>
-
-                            {warnings.slice(0, 4).map((warning) => (
-                              <span
-                                key={warning.key}
-                                className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${getWarningBadgeClass(
-                                  warning.level
-                                )}`}
-                              >
-                                {warning.label}
-                              </span>
-                            ))}
+                    return (
+                      <button
+                        key={emp.id}
+                        onClick={() => {
+                          setSelectedEmpId(selectedEmpId === emp.id ? null : emp.id);
+                          setSelectedMonth(new Date().toISOString().substring(0, 7));
+                        }}
+                        className={`text-left p-5 rounded-3xl border transition-all ${
+                          selectedEmpId === emp.id
+                            ? 'border-orange-400 bg-orange-50 shadow-lg shadow-orange-100'
+                            : warnings.some((w) => w.level === 'danger')
+                            ? 'border-red-200 bg-red-50/40 hover:border-red-300'
+                            : warnings.length > 0
+                            ? 'border-yellow-200 bg-yellow-50/40 hover:border-yellow-300'
+                            : 'border-gray-100 bg-gray-50 hover:border-orange-200 hover:bg-white'
+                        }`}
+                        type="button"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-lg font-black text-gray-800">{emp.name}</p>
+                            <p className="text-xs text-gray-400 font-bold mt-1">
+                              點擊查看詳細內容
+                            </p>
                           </div>
 
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                今年分數
-                              </p>
-                              <p className="text-2xl font-black mt-2 text-gray-800">
-                                {assessment.thisYearPoints}
-                              </p>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                去年分數
-                              </p>
-                              <p className="text-2xl font-black mt-2 text-gray-800">
-                                {assessment.lastYearPoints}
-                              </p>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                年資
-                              </p>
-                              <p className="text-xl font-black mt-2 text-gray-800">
-                                {calculateSeniority(emp.startDate).text}
-                              </p>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                已過關卡
-                              </p>
-                              <p className="text-2xl font-black mt-2 text-gray-800">
-                                {emp.skillsPassed}
-                              </p>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                預估加級
-                              </p>
-                              <p className="text-2xl font-black mt-2 text-orange-600">
-                                {calculateFinalPay(emp)}
-                              </p>
-                            </div>
-                          </div>
+                          <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500">
+                            {emp.shop || '未設定店鋪'}
+                          </span>
                         </div>
 
-                        <div className="xl:w-[140px]">
-                          <button
-                            onClick={() => {
-                              setSelectedEmpId(emp.id);
-                              setSelectedMonth(new Date().toISOString().substring(0, 7));
-                            }}
-                            className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 text-gray-700 font-black hover:border-orange-300 hover:text-orange-600 transition-colors"
-                            type="button"
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <span
+                            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${assessment.result.bg}`}
                           >
-                            查看詳情
-                          </button>
+                            {assessment.result.status}
+                          </span>
+
+                          {warnings.slice(0, 2).map((warning) => (
+                            <span
+                              key={warning.key}
+                              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${getWarningBadgeClass(
+                                warning.level
+                              )}`}
+                            >
+                              {warning.label}
+                            </span>
+                          ))}
                         </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                      </button>
+                    );
+                  })}
+                </div>
 
                 {sortedEmployees.length === 0 && (
                   <div className="p-8 rounded-3xl border border-dashed border-gray-200 text-center bg-gray-50 text-gray-400 font-bold">
@@ -1694,159 +1896,252 @@ const App = () => {
         {activeTab === 'admin' && (
           <div className="space-y-6 animate-in slide-in-from-top-4 duration-300">
             <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-6">
                 <div>
                   <h2 className="text-xl font-black flex items-center gap-2 text-gray-800">
                     <Lock size={22} className="text-red-600" />
-                    管理員設定中心
+                    管理員總控中心
                   </h2>
                   <p className="text-xs text-gray-400 font-bold mt-1">
-                    多店設定、店長帳號密碼、系統總覽都放在這裡
+                    先看整體營運狀態，需要改密碼再點右上齒輪
                   </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminSettings(true)}
+                    className="px-4 py-3 rounded-2xl border border-gray-200 bg-white text-gray-700 font-black hover:border-orange-300 hover:text-orange-600 transition-colors inline-flex items-center gap-2"
+                  >
+                    <Settings size={18} />
+                    管理設定
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingEmp({
+                        name: '',
+                        shop: '',
+                        startDate: new Date().toISOString().split('T')[0],
+                        currentPoints: DEFAULT_INITIAL_POINTS,
+                        initialPoints: DEFAULT_INITIAL_POINTS,
+                        lastYearLow: false,
+                        level: '一般夥伴',
+                        multiplier: 1,
+                        skillsPassed: 0,
+                        storeId: 'storeA'
+                      });
+                      setIsAddingNew(true);
+                    }}
+                    className="px-4 py-3 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center gap-2"
+                  >
+                    <PlusCircle size={18} />
+                    新增員工
+                  </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
-                <div className="bg-gray-50 rounded-[2rem] p-6 border border-gray-100">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                        管理員密碼
-                      </label>
-                      <input
-                        value={passwordPanel.adminPassword}
-                        onChange={(e) =>
-                          setPasswordPanel((prev) => ({
-                            ...prev,
-                            adminPassword: e.target.value
-                          }))
-                        }
-                        className="w-full mt-1 px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:border-orange-500 outline-none font-bold"
-                      />
-                    </div>
+              <div className="grid grid-cols-2 xl:grid-cols-6 gap-3">
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                  <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">全部員工</p>
+                  <p className="text-2xl font-black mt-2 text-gray-800">{adminOverview.total}</p>
+                </div>
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                  <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">有警示</p>
+                  <p className="text-2xl font-black mt-2 text-orange-600">{adminOverview.warning}</p>
+                </div>
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                  <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">遲到風險</p>
+                  <p className="text-2xl font-black mt-2 text-yellow-600">{adminOverview.lateRisk}</p>
+                </div>
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                  <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">高風險</p>
+                  <p className="text-2xl font-black mt-2 text-red-600">{adminOverview.highRisk}</p>
+                </div>
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                  <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{getStoreLabel('storeA')}</p>
+                  <p className="text-2xl font-black mt-2 text-orange-600">{adminStoreStats.storeA}</p>
+                </div>
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                  <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{getStoreLabel('storeB')}</p>
+                  <p className="text-2xl font-black mt-2 text-orange-600">{adminStoreStats.storeB}</p>
+                </div>
+              </div>
+            </section>
 
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div className="bg-white rounded-2xl p-5 border border-gray-200">
-                        <p className="text-sm font-black text-gray-800 mb-4">
-                          店長 A / {getStoreLabel('storeA')}
-                        </p>
-                        <div className="space-y-3">
-                          <input
-                            value={passwordPanel.managerAName}
-                            onChange={(e) =>
-                              setPasswordPanel((prev) => ({
-                                ...prev,
-                                managerAName: e.target.value
-                              }))
-                            }
-                            placeholder="店長名稱"
-                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
-                          />
-                          <input
-                            value={passwordPanel.managerAPassword}
-                            onChange={(e) =>
-                              setPasswordPanel((prev) => ({
-                                ...prev,
-                                managerAPassword: e.target.value
-                              }))
-                            }
-                            placeholder="店長密碼"
-                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="bg-white rounded-2xl p-5 border border-gray-200">
-                        <p className="text-sm font-black text-gray-800 mb-4">
-                          店長 B / {getStoreLabel('storeB')}
-                        </p>
-                        <div className="space-y-3">
-                          <input
-                            value={passwordPanel.managerBName}
-                            onChange={(e) =>
-                              setPasswordPanel((prev) => ({
-                                ...prev,
-                                managerBName: e.target.value
-                              }))
-                            }
-                            placeholder="店長名稱"
-                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
-                          />
-                          <input
-                            value={passwordPanel.managerBPassword}
-                            onChange={(e) =>
-                              setPasswordPanel((prev) => ({
-                                ...prev,
-                                managerBPassword: e.target.value
-                              }))
-                            }
-                            placeholder="店長密碼"
-                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={savePasswords}
-                      disabled={savingPassword}
-                      className="w-full py-4 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-                      type="button"
-                    >
-                      <Save size={18} />
-                      {savingPassword ? '儲存中...' : '儲存管理設定'}
-                    </button>
-                  </div>
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-5">
+                <div>
+                  <h3 className="text-lg font-black text-gray-800">員工全覽儀表板</h3>
+                  <p className="text-xs text-gray-400 font-bold mt-1">
+                    年資、去年分數、今年分數、年度等級、當月風險與年終預估一次看完
+                  </p>
                 </div>
 
-                <div className="bg-gray-50 rounded-[2rem] p-6 border border-gray-100">
-                  <h3 className="font-black text-gray-800 mb-5">系統總覽</h3>
+                <div className="grid sm:grid-cols-3 gap-3 w-full xl:w-auto">
+                  <input
+                    type="text"
+                    value={adminSearch}
+                    onChange={(e) => setAdminSearch(e.target.value)}
+                    placeholder="搜尋姓名 / 分店 / 職級"
+                    className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:border-orange-500 font-bold"
+                  />
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                      <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                        全部員工
-                      </p>
-                      <p className="text-2xl font-black mt-2 text-gray-800">
-                        {employees.length}
-                      </p>
-                    </div>
+                  <select
+                    value={adminStoreFilter}
+                    onChange={(e) => setAdminStoreFilter(e.target.value)}
+                    className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:border-orange-500 font-bold"
+                  >
+                    <option value="all">全部分店</option>
+                    <option value="storeA">{getStoreLabel('storeA')}</option>
+                    <option value="storeB">{getStoreLabel('storeB')}</option>
+                  </select>
 
-                    <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                      <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                        全部紀錄
-                      </p>
-                      <p className="text-2xl font-black mt-2 text-gray-800">
-                        {logs.length}
-                      </p>
-                    </div>
+                  <select
+                    value={adminStatusFilter}
+                    onChange={(e) => setAdminStatusFilter(e.target.value)}
+                    className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:border-orange-500 font-bold"
+                  >
+                    <option value="all">全部年度結果</option>
+                    <option value="A">A 合格</option>
+                    <option value="B">B 警示</option>
+                    <option value="C">C 重罰</option>
+                    <option value="D">D 淘汰</option>
+                  </select>
+                </div>
+              </div>
 
-                    <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                      <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                        {getStoreLabel('storeA')}
-                      </p>
-                      <p className="text-2xl font-black mt-2 text-orange-600">
-                        {adminStoreStats.storeA}
-                      </p>
-                    </div>
+              <div className="grid md:grid-cols-4 gap-3 mb-5">
+                <div className="bg-green-50 rounded-2xl p-4 border border-green-100">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-green-600">A 合格</p>
+                  <p className="text-2xl font-black mt-2 text-green-700">{adminOverview.statusA}</p>
+                </div>
+                <div className="bg-yellow-50 rounded-2xl p-4 border border-yellow-100">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-yellow-600">B 警示</p>
+                  <p className="text-2xl font-black mt-2 text-yellow-700">{adminOverview.statusB}</p>
+                </div>
+                <div className="bg-red-50 rounded-2xl p-4 border border-red-100">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-red-600">C 重罰</p>
+                  <p className="text-2xl font-black mt-2 text-red-700">{adminOverview.statusC}</p>
+                </div>
+                <div className="bg-gray-100 rounded-2xl p-4 border border-gray-200">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-600">D 淘汰</p>
+                  <p className="text-2xl font-black mt-2 text-gray-800">{adminOverview.statusD}</p>
+                </div>
+              </div>
 
-                    <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                      <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                        {getStoreLabel('storeB')}
-                      </p>
-                      <p className="text-2xl font-black mt-2 text-orange-600">
-                        {adminStoreStats.storeB}
-                      </p>
-                    </div>
-                  </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1180px]">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-widest text-gray-400">
+                      <th className="pb-3 pr-4">員工</th>
+                      <th className="pb-3 pr-4">分店 / 職級</th>
+                      <th className="pb-3 pr-4">年資</th>
+                      <th className="pb-3 pr-4">去年</th>
+                      <th className="pb-3 pr-4">今年</th>
+                      <th className="pb-3 pr-4">年度結果</th>
+                      <th className="pb-3 pr-4">本月風險</th>
+                      <th className="pb-3 pr-4">年終預估</th>
+                      <th className="pb-3 text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminEmployeeRows.length > 0 ? (
+                      adminEmployeeRows.map((emp) => (
+                        <tr key={emp.id} className="border-t border-gray-100 align-top">
+                          <td className="py-4 pr-4">
+                            <div className="font-black text-gray-800">{emp.name}</div>
+                            <div className="text-xs text-gray-400 font-bold mt-1">
+                              已過關卡 {emp.skillsPassed || 0} / 倍率 {emp.multiplier || 1}
+                            </div>
+                          </td>
+                          <td className="py-4 pr-4">
+                            <div className="font-black text-gray-700">{getStoreLabel(emp.storeId)}</div>
+                            <div className="text-xs text-gray-400 font-bold mt-1">{emp.level || '未設定職級'}</div>
+                          </td>
+                          <td className="py-4 pr-4 font-black text-gray-700">{emp.seniority.text}</td>
+                          <td className="py-4 pr-4 font-black text-gray-700">{emp.assessment.lastYearPoints}</td>
+                          <td className="py-4 pr-4 font-black text-gray-800">{emp.assessment.thisYearPoints}</td>
+                          <td className="py-4 pr-4">
+                            <span className={`inline-flex px-3 py-1 rounded-full text-xs font-black ${emp.assessment.result.bg}`}>
+                              {emp.assessment.result.status}
+                            </span>
+                            <div className="text-xs text-gray-400 font-bold mt-2">{emp.assessment.result.desc}</div>
+                          </td>
+                          <td className="py-4 pr-4">
+                            <div className="flex flex-wrap gap-2">
+                              {emp.warnings.length > 0 ? (
+                                emp.warnings.slice(0, 3).map((warning) => (
+                                  <span
+                                    key={warning.key}
+                                    className={`px-2.5 py-1 rounded-full border text-[11px] font-black ${getWarningBadgeClass(warning.level)}`}
+                                  >
+                                    {warning.label}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="px-2.5 py-1 rounded-full border text-[11px] font-black bg-green-50 text-green-700 border-green-100">
+                                  狀態穩定
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400 font-bold mt-2">
+                              遲到 {emp.monthlyStats.lateCount} / 重大失誤 {emp.monthlyStats.majorMistakeCount} / 負向 {emp.monthlyStats.totalPenaltyCount}
+                            </div>
+                          </td>
+                          <td className="py-4 pr-4 font-black text-gray-800">
+                            {emp.finalPay > 0 ? `${emp.finalPay} 元` : '0 元'}
+                          </td>
+                          <td className="py-4 text-right">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingEmp({
+                                    ...emp,
+                                    currentPoints: emp.assessment.thisYearPoints
+                                  })
+                                }
+                                className="w-10 h-10 rounded-2xl bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
+                              >
+                                <Edit3 size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeletingEmpId(emp.id)}
+                                className="w-10 h-10 rounded-2xl bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-600 transition-colors"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={9} className="py-10 text-center text-gray-400 font-bold">
+                          目前沒有符合條件的員工資料
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
 
-                  <div className="mt-5 bg-white rounded-2xl p-4 border border-gray-100 text-sm text-gray-600 leading-7 font-bold">
-                    <div>資料路徑：</div>
-                    <div>stores / storeA / employees</div>
-                    <div>stores / storeA / logs</div>
-                    <div>stores / storeB / employees</div>
-                    <div>stores / storeB / logs</div>
-                  </div>
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+              <h3 className="font-black text-gray-800 mb-4">正式上線前檢查重點</h3>
+              <div className="grid md:grid-cols-2 gap-4 text-sm font-bold text-gray-600">
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 leading-7">
+                  <div>1. firebase.js 要使用你正式專案的設定值。</div>
+                  <div>2. Firestore 規則要允許登入後讀寫 stores 與 settings。</div>
+                  <div>3. GitHub Pages 若空白，多半是環境變數、路由或 base path 問題。</div>
+                </div>
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 leading-7">
+                  <div>4. 這版已把新增 / 編輯 / 刪除 / 加扣分都補上錯誤提示。</div>
+                  <div>5. 管理設定已收進齒輪，不會擠在主畫面。</div>
+                  <div>6. 管理員首頁直接看全員狀態，適合上線營運。</div>
                 </div>
               </div>
             </section>
