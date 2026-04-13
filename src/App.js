@@ -1668,6 +1668,16 @@ const App = () => {
 
           <div className="flex bg-gray-100 p-1 rounded-xl gap-1 border border-gray-200">
             <button
+              onClick={() => window.location.href = 'https://work-checkin.vercel.app/'}
+              title="前往打卡系統"
+              className="px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 text-gray-400 hover:text-orange-600 hover:bg-white"
+              type="button"
+            >
+              <Clock3 size={14} />
+              <span className="hidden sm:inline">打卡</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('employee')}
               className={`px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 ${
                 activeTab === 'employee'
