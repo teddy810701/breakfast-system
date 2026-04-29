@@ -26,11 +26,14 @@ import {
   ArrowRight,
   RotateCcw,
   Save,
-  Settings
+  Settings,
+  CheckCircle2,
+  Clock3
 } from 'lucide-react';
 
 const App = () => {
   const DEFAULT_INITIAL_POINTS = 600;
+  const MONTHLY_BASE_POINTS = 50;
   const GLOBAL_BASE_BONUS = 600;
 
   const STORE_CONFIG = {
@@ -99,6 +102,12 @@ const App = () => {
   const [adminStoreFilter, setAdminStoreFilter] = useState('all');
   const [adminStatusFilter, setAdminStatusFilter] = useState('all');
 
+  const [missedClockForm, setMissedClockForm] = useState({
+    requestDate: new Date().toISOString().split('T')[0],
+    requestTime: '',
+    reason: ''
+  });
+
   const getStoreLabel = useCallback(
     (storeId) => STORE_CONFIG[storeId]?.label || storeId || '未設定店鋪',
     []
@@ -129,6 +138,19 @@ const App = () => {
     }
 
     return String(value);
+  };
+
+
+  const formatDateTime = (value) => {
+    const d = toJsDate(value);
+    if (!d || Number.isNaN(d.getTime())) return value || '';
+    return d.toLocaleString('zh-TW', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   const toJsDate = (value) => {
@@ -431,6 +453,126 @@ const App = () => {
     setActiveTab('employee');
   };
 
+  const handleMissedClockRequest = async () => {
+    if (!selectedEmp?.id) {
+      showMessage('請先選擇員工', 'error');
+      return;
+    }
+
+    if (!missedClockForm.requestDate || !missedClockForm.requestTime || !missedClockForm.reason.trim()) {
+      showMessage('請完整填寫忘打卡日期、時間與原因', 'error');
+      return;
+    }
+
+    const requestDateTime = `${missedClockForm.requestDate}T${missedClockForm.requestTime}`;
+
+    try {
+      await addDoc(collection(db, 'stores', selectedEmp.storeId, 'logs'), {
+        empId: selectedEmp.id,
+        amount: 0,
+        reason: '忘打卡申請',
+        note: missedClockForm.reason.trim(),
+        occurrenceDate: missedClockForm.requestDate,
+        requestDate: missedClockForm.requestDate,
+        requestTime: missedClockForm.requestTime,
+        requestDateTime,
+        timestamp: new Date().toISOString(),
+        name: selectedEmp.name,
+        operator: selectedEmp.name,
+        operatorKey: 'employee_request',
+        operatorStoreId: selectedEmp.storeId,
+        operatorStoreLabel: getStoreLabel(selectedEmp.storeId),
+        actionType: 'missed_clock_request',
+        requestStatus: 'pending'
+      });
+
+      setMissedClockForm({
+        requestDate: new Date().toISOString().split('T')[0],
+        requestTime: '',
+        reason: ''
+      });
+      showMessage('忘打卡申請已送出', 'success');
+    } catch (error) {
+      console.error('送出忘打卡申請失敗:', error);
+      showMessage('送出忘打卡申請失敗', 'error');
+    }
+  };
+
+  const handleMissedClockReview = async (log, nextStatus) => {
+    if (!log?.id || !log?.storeId) {
+      showMessage('找不到忘打卡申請資料', 'error');
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'stores', log.storeId, 'logs', log.id), {
+        requestStatus: nextStatus,
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: '管理員',
+        reviewerKey: 'admin'
+      });
+
+      await addDoc(collection(db, 'stores', log.storeId, 'logs'), {
+        empId: log.empId,
+        amount: 0,
+        reason: nextStatus === 'approved' ? '批准忘打卡申請' : '退回忘打卡申請',
+        note: `${log.name || '員工'}｜${log.requestDate || log.occurrenceDate || ''} ${log.requestTime || ''}｜原因：${log.note || '未填寫'}`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        name: log.name || '未知員工',
+        operator: '管理員',
+        operatorKey: 'admin',
+        operatorStoreId: log.storeId,
+        operatorStoreLabel: getStoreLabel(log.storeId),
+        actionType: nextStatus === 'approved' ? 'approve_missed_clock_request' : 'reject_missed_clock_request',
+        requestStatus: nextStatus,
+        targetRequestId: log.id,
+        requestDate: log.requestDate || log.occurrenceDate || '',
+        requestTime: log.requestTime || ''
+      });
+
+      showMessage(nextStatus === 'approved' ? '已批准忘打卡申請' : '已退回忘打卡申請', 'success');
+    } catch (error) {
+      console.error('審核忘打卡申請失敗:', error);
+      showMessage('審核忘打卡申請失敗', 'error');
+    }
+  };
+
+
+  const handleDeleteMissedClockRequest = async (log) => {
+    if (!log?.id || !log?.storeId) {
+      showMessage('找不到忘打卡申請資料', 'error');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'stores', log.storeId, 'logs'), {
+        empId: log.empId,
+        amount: 0,
+        reason: '刪除忘打卡申請',
+        note: `${log.name || '員工'}｜${log.requestDate || log.occurrenceDate || ''} ${log.requestTime || ''}｜狀態：${log.requestStatus || 'pending'}｜原因：${log.note || '未填寫'}`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        name: log.name || '未知員工',
+        operator: '管理員',
+        operatorKey: 'admin',
+        operatorStoreId: log.storeId,
+        operatorStoreLabel: getStoreLabel(log.storeId),
+        actionType: 'delete_missed_clock_request',
+        deletedRequestId: log.id,
+        deletedRequestStatus: log.requestStatus || 'pending',
+        requestDate: log.requestDate || log.occurrenceDate || '',
+        requestTime: log.requestTime || ''
+      });
+
+      await deleteDoc(doc(db, 'stores', log.storeId, 'logs', log.id));
+      showMessage('忘打卡申請已刪除', 'success');
+    } catch (error) {
+      console.error('刪除忘打卡申請失敗:', error);
+      showMessage('刪除忘打卡申請失敗', 'error');
+    }
+  };
+
   // ===== 新增員工 =====
   const handleAddEmployee = async () => {
     if (!editingEmp?.name) {
@@ -448,11 +590,26 @@ const App = () => {
     }
 
     try {
-      await addDoc(collection(db, 'stores', storeId, 'employees'), {
+      const newEmpRef = await addDoc(collection(db, 'stores', storeId, 'employees'), {
         ...editingEmp,
         storeId,
         shop: getStoreLabel(storeId),
         currentPoints: editingEmp.initialPoints || DEFAULT_INITIAL_POINTS
+      });
+
+      await addDoc(collection(db, 'stores', storeId, 'logs'), {
+        empId: newEmpRef.id,
+        amount: 0,
+        reason: '新增員工資料',
+        note: `${editingEmp.name} 已被新增`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        name: editingEmp.name,
+        operator: currentManager?.name || '管理員',
+        operatorKey: currentManager?.key || 'admin',
+        operatorStoreId: currentManager?.storeId || storeId,
+        operatorStoreLabel: getStoreLabel(currentManager?.storeId || storeId),
+        actionType: 'create_employee'
       });
 
       setEditingEmp(null);
@@ -498,6 +655,41 @@ const App = () => {
     }
   };
 
+  const handleDeleteScoreLog = async (log) => {
+    if (!log?.id || !log?.storeId) {
+      showMessage('找不到評分紀錄', 'error');
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, 'stores', log.storeId, 'logs'), {
+        empId: log.empId || 'UNKNOWN',
+        amount: 0,
+        reason: '刪除加扣分紀錄',
+        note: `已刪除「${log.reason || '未命名項目'}」${Number(log.amount) || 0} 分`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        name: log.name || '未知員工',
+        operator: currentManager?.name || '管理員',
+        operatorKey: currentManager?.key || 'admin',
+        operatorStoreId: currentManager?.storeId || log.storeId,
+        operatorStoreLabel: getStoreLabel(currentManager?.storeId || log.storeId),
+        actionType: 'delete_score_change',
+        deletedLogId: log.id,
+        deletedReason: log.reason || '',
+        deletedAmount: Number(log.amount) || 0,
+        deletedOccurrenceDate: log.occurrenceDate || '',
+        deletedOriginalTimestamp: log.timestamp || ''
+      });
+
+      await deleteDoc(doc(db, 'stores', log.storeId, 'logs', log.id));
+      showMessage('加扣分紀錄已刪除', 'success');
+    } catch (error) {
+      console.error('刪除評分紀錄失敗:', error);
+      showMessage('刪除評分紀錄失敗', 'error');
+    }
+  };
+
   // ===== 刪除員工 =====
   const deleteEmployee = async (id) => {
     const emp = employees.find((e) => e.id === id);
@@ -507,6 +699,22 @@ const App = () => {
     }
 
     try {
+      await addDoc(collection(db, 'stores', emp.storeId, 'logs'), {
+        empId: emp.id,
+        name: emp.name,
+        storeId: emp.storeId,
+        reason: '刪除員工資料',
+        amount: 0,
+        note: `${emp.name} 的員工資料已被刪除`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        operator: currentManager?.name || '管理員',
+        operatorKey: currentManager?.key || 'admin',
+        operatorStoreId: currentManager?.storeId || emp.storeId,
+        operatorStoreLabel: getStoreLabel(currentManager?.storeId || emp.storeId),
+        actionType: 'delete_employee'
+      });
+
       await deleteDoc(
         doc(db, 'stores', emp.storeId, 'employees', id)
       );
@@ -535,6 +743,21 @@ const App = () => {
         }
       );
 
+      await addDoc(collection(db, 'stores', editingEmp.storeId, 'logs'), {
+        empId: editingEmp.id,
+        amount: 0,
+        reason: '修改員工資料',
+        note: `${editingEmp.name} 資料已被修改`,
+        occurrenceDate: new Date().toISOString().split('T')[0],
+        timestamp: new Date().toISOString(),
+        name: editingEmp.name,
+        operator: currentManager?.name || '管理員',
+        operatorKey: currentManager?.key || 'admin',
+        operatorStoreId: editingEmp.storeId,
+        operatorStoreLabel: getStoreLabel(editingEmp.storeId),
+        actionType: 'edit_employee'
+      });
+
       setEditingEmp(null);
       showMessage('夥伴資料已更新', 'success');
     } catch (error) {
@@ -551,7 +774,6 @@ const App = () => {
 
   const selectedEmp =
     visibleEmployees.find((e) => e.id === selectedEmpId) ||
-    visibleEmployees[0] ||
     null;
 
   const filteredPersonalLogs = logs
@@ -565,6 +787,39 @@ const App = () => {
     .filter((log) => log.empId === selectedEmpId)
     .filter((log) => !currentStoreId || log.storeId === currentStoreId)
     .slice(0, 10);
+
+  const employeeMissedClockLogs = useMemo(() => {
+    return [...logs]
+      .filter((log) => log.actionType === 'missed_clock_request')
+      .sort((a, b) => {
+        const aTime = toJsDate(a.timestamp || a.requestDateTime || a.occurrenceDate)?.getTime() || 0;
+        const bTime = toJsDate(b.timestamp || b.requestDateTime || b.occurrenceDate)?.getTime() || 0;
+        return bTime - aTime;
+      });
+  }, [logs]);
+
+  const selectedEmpMissedClockLogs = useMemo(() => {
+    if (!selectedEmp?.id) return [];
+    return employeeMissedClockLogs.filter((log) => log.empId === selectedEmp.id).slice(0, 8);
+  }, [employeeMissedClockLogs, selectedEmp]);
+
+  const pendingMissedClockRequests = useMemo(() => {
+    return employeeMissedClockLogs.filter((log) => log.requestStatus === 'pending');
+  }, [employeeMissedClockLogs]);
+
+  const reviewedMissedClockRequests = useMemo(() => {
+    return employeeMissedClockLogs
+      .filter((log) => log.requestStatus === 'approved' || log.requestStatus === 'rejected')
+      .slice(0, 30);
+  }, [employeeMissedClockLogs]);
+
+  const getEmployeeMonthlyMissedClockCount = (empId, monthKey = getCurrentMonthKey()) => {
+    return employeeMissedClockLogs.filter((log) => {
+      if (log.empId !== empId) return false;
+      const targetMonthKey = getMonthKeyFromDate(log.requestDate || log.occurrenceDate || log.timestamp);
+      return targetMonthKey === monthKey;
+    }).length;
+  };
 
   const adminManagerLogs = useMemo(() => {
     return [...logs]
@@ -598,6 +853,16 @@ const App = () => {
       if (log.empId !== empId) return false;
       return getMonthKeyFromDate(log.occurrenceDate || log.timestamp) === monthKey;
     });
+  };
+
+  const getEmployeeMonthlyPoints = (empId, monthKey = getCurrentMonthKey()) => {
+    const monthLogs = getEmployeeMonthLogs(empId, monthKey);
+    const monthlyDelta = monthLogs.reduce(
+      (sum, log) => sum + (Number(log.amount) || 0),
+      0
+    );
+
+    return MONTHLY_BASE_POINTS + monthlyDelta;
   };
 
   const isLateLog = (log) => {
@@ -738,6 +1003,7 @@ const App = () => {
         const seniority = calculateSeniority(emp.startDate);
         const warnings = getEmployeeWarnings(emp);
         const monthlyStats = getEmployeeMonthlyWarningStats(emp.id);
+        const monthlyPoints = getEmployeeMonthlyPoints(emp.id);
         const finalPay = calculateFinalPay(emp);
 
         return {
@@ -746,6 +1012,7 @@ const App = () => {
           seniority,
           warnings,
           monthlyStats,
+          monthlyPoints,
           finalPay
         };
       })
@@ -807,6 +1074,83 @@ const App = () => {
 
     return summary;
   }, [employees, getEmployeeAssessment]);
+
+
+  const formatExcelValue = (value) => {
+    if (value === null || value === undefined) return '';
+    const raw = String(value);
+    if (/^[=+\-@]/.test(raw)) return `'${raw}`;
+    return raw.replace(/"/g, '""');
+  };
+
+  const exportEmployeesToExcel = () => {
+    try {
+      const monthKey = getCurrentMonthKey();
+      const rows = employees.map((emp) => {
+        const assessment = getEmployeeAssessment(emp);
+        const seniority = calculateSeniority(emp.startDate);
+        const monthlyStats = getEmployeeMonthlyWarningStats(emp.id, monthKey);
+        const missedCount = getEmployeeMonthlyMissedClockCount(emp.id, monthKey);
+        const monthlyPoints = getEmployeeMonthlyPoints(emp.id, monthKey);
+        const warnings = getEmployeeWarnings(emp).map((item) => item.label).join('、');
+        const finalPay = calculateFinalPay(emp);
+
+        return {
+          分店: getStoreLabel(emp.storeId),
+          員工姓名: emp.name || '',
+          員工編號: emp.employeeId || '',
+          職級: emp.level || '',
+          到職日: formatDate(emp.startDate),
+          年資: seniority.text,
+          初始積分: typeof emp.initialPoints === 'number' ? emp.initialPoints : DEFAULT_INITIAL_POINTS,
+          去年分數: assessment.lastYearPoints,
+          今年分數: assessment.thisYearPoints,
+          年度結果: assessment.result.status,
+          年度說明: assessment.result.desc,
+          本月遲到次數: monthlyStats.lateCount,
+          本月重大失誤次數: monthlyStats.majorMistakeCount,
+          本月負向紀錄數: monthlyStats.totalPenaltyCount,
+          本月累積扣分: monthlyStats.totalPenaltyPoints,
+          當月積分: monthlyPoints,
+          本月忘打卡次數: missedCount,
+          已過關卡: emp.skillsPassed || 0,
+          倍率: emp.multiplier || 1,
+          預估加級: finalPay,
+          去年是否低分: emp.lastYearLow ? '是' : '否',
+          警示摘要: warnings || '無',
+          備註: emp.note || ''
+        };
+      });
+
+      const headers = [
+        '分店','員工姓名','員工編號','職級','到職日','年資','初始積分','去年分數','今年分數','年度結果','年度說明',
+        '本月遲到次數','本月重大失誤次數','本月負向紀錄數','本月累積扣分','當月積分','本月忘打卡次數',
+        '已過關卡','倍率','預估加級','去年是否低分','警示摘要','備註'
+      ];
+
+      const csv = [
+        headers.join(','),
+        ...rows.map((row) => headers.map((header) => `"${formatExcelValue(row[header])}"`).join(','))
+      ].join('\n');
+
+      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const today = new Date();
+      const fileDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+      link.href = url;
+      link.setAttribute('download', `員工積分總表_${fileDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      showMessage('員工 Excel 報表已匯出', 'success');
+    } catch (error) {
+      console.error('匯出員工報表失敗:', error);
+      showMessage('匯出員工報表失敗', 'error');
+    }
+  };
 
   const savePasswords = async () => {
     try {
@@ -1339,6 +1683,16 @@ const App = () => {
 
           <div className="flex bg-gray-100 p-1 rounded-xl gap-1 border border-gray-200">
             <button
+              onClick={() => window.location.href = 'https://work-checkin.vercel.app/'}
+              title="前往打卡系統"
+              className="px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 text-gray-400 hover:text-orange-600 hover:bg-white"
+              type="button"
+            >
+              <Clock3 size={14} />
+              <span className="hidden sm:inline">打卡</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('employee')}
               className={`px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 ${
                 activeTab === 'employee'
@@ -1498,37 +1852,41 @@ const App = () => {
 
                             <div className="bg-white rounded-2xl p-4 border border-gray-100">
                               <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                去年分數
+                                年度結果
                               </p>
-                              <p className="text-2xl font-black mt-2 text-gray-800">
-                                {assessment.lastYearPoints}
+                              <div className="mt-2">
+                                <span
+                                  className={`px-3 py-1 rounded-2xl text-xs font-black ${assessment.result.bg}`}
+                                >
+                                  {assessment.result.status}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
+                              <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">
+                                當月積分
+                              </p>
+                              <p className="text-2xl font-black mt-2 text-blue-700">
+                                {getEmployeeMonthlyPoints(emp.id)}
                               </p>
                             </div>
 
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                年資
-                              </p>
-                              <p className="text-xl font-black mt-2 text-gray-800">
-                                {calculateSeniority(emp.startDate).text}
-                              </p>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                已過關卡
-                              </p>
-                              <p className="text-2xl font-black mt-2 text-gray-800">
-                                {emp.skillsPassed}
-                              </p>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                預估加級
+                            <div className="bg-orange-50 rounded-2xl p-4 border border-orange-100">
+                              <p className="text-[10px] text-orange-500 font-black uppercase tracking-widest">
+                                本月忘打卡
                               </p>
                               <p className="text-2xl font-black mt-2 text-orange-600">
-                                {calculateFinalPay(emp)}
+                                {getEmployeeMonthlyMissedClockCount(emp.id)}
+                              </p>
+                            </div>
+
+                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
+                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                                目前警示
+                              </p>
+                              <p className="text-sm font-black mt-2 text-gray-700">
+                                {warnings.length > 0 ? `${warnings.length} 項` : '無'}
                               </p>
                             </div>
                           </div>
@@ -1543,7 +1901,7 @@ const App = () => {
                             className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 text-gray-700 font-black hover:border-orange-300 hover:text-orange-600 transition-colors"
                             type="button"
                           >
-                            查看詳情
+                            {selectedEmpId === emp.id ? '查看中' : '查看詳情'}
                           </button>
                         </div>
                       </div>
@@ -1576,51 +1934,128 @@ const App = () => {
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2 bg-white border border-gray-200 px-4 py-2.5 rounded-2xl">
-                        <Calendar size={16} className="text-gray-400" />
-                        <input
-                          type="month"
-                          value={selectedMonth}
-                          onChange={(e) => setSelectedMonth(e.target.value)}
-                          className="bg-transparent text-sm font-black text-gray-700 outline-none"
-                        />
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 bg-white border border-gray-200 px-4 py-2.5 rounded-2xl">
+                          <Calendar size={16} className="text-gray-400" />
+                          <input
+                            type="month"
+                            value={selectedMonth}
+                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            className="bg-transparent text-sm font-black text-gray-700 outline-none"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEmpId(null)}
+                          className="px-4 py-2.5 rounded-2xl bg-white border border-gray-200 text-gray-600 font-black hover:border-orange-300 hover:text-orange-600 transition-colors"
+                        >
+                          收合詳情
+                        </button>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-gray-50 rounded-3xl p-6 border border-gray-100">
-                      <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                        年資
-                      </p>
-                      <p className="text-xl font-black mt-3 text-gray-800">
-                        {calculateSeniority(selectedEmp.startDate).text}
-                      </p>
-                    </div>
+                  <div className="p-8">
+                    <div className="space-y-3">
+                      <div className="bg-gray-50 rounded-3xl px-5 py-4 border border-gray-100 flex items-center justify-between gap-4 min-h-[88px]">
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                            年資
+                          </p>
+                          <p className="text-sm text-gray-400 font-bold mt-2">
+                            到職後累積年資
+                          </p>
+                        </div>
+                        <p className="text-2xl font-black text-gray-800 text-right leading-tight">
+                          {calculateSeniority(selectedEmp.startDate).text}
+                        </p>
+                      </div>
 
-                    <div className="bg-gray-50 rounded-3xl p-6 border border-gray-100">
-                      <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                        年度結果
-                      </p>
-                      <div className="mt-3">
+                      <div className="bg-gray-50 rounded-3xl px-5 py-4 border border-gray-100 flex items-center justify-between gap-4 min-h-[88px]">
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                            去年分數
+                          </p>
+                          <p className="text-sm text-gray-400 font-bold mt-2">
+                            去年年度累積結果
+                          </p>
+                        </div>
+                        <p className="text-3xl font-black text-gray-800 text-right leading-none">
+                          {getEmployeeAssessment(selectedEmp).lastYearPoints}
+                        </p>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-3xl px-5 py-4 border border-gray-100 flex items-center justify-between gap-4 min-h-[88px]">
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                            年度結果
+                          </p>
+                          <p className="text-sm text-gray-400 font-bold mt-2">
+                            {getEmployeeAssessment(selectedEmp).result.desc}
+                          </p>
+                        </div>
                         <span
-                          className={`px-4 py-2 rounded-2xl text-xs font-black ${getEmployeeAssessment(selectedEmp).result.bg}`}
+                          className={`px-4 py-2 rounded-2xl text-sm font-black whitespace-nowrap ${getEmployeeAssessment(selectedEmp).result.bg}`}
                         >
                           {getEmployeeAssessment(selectedEmp).result.status}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-400 mt-3 font-bold">
-                        {getEmployeeAssessment(selectedEmp).result.desc}
-                      </p>
-                    </div>
 
-                    <div className="bg-gray-50 rounded-3xl p-6 border border-gray-100">
-                      <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                        預估加級
-                      </p>
-                      <p className="text-3xl font-black mt-3 text-orange-600">
-                        {calculateFinalPay(selectedEmp)}
-                      </p>
+                      <div className="bg-gray-50 rounded-3xl px-5 py-4 border border-gray-100 flex items-center justify-between gap-4 min-h-[88px]">
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                            已過關卡
+                          </p>
+                          <p className="text-sm text-gray-400 font-bold mt-2">
+                            獎金門檻至少 2 關
+                          </p>
+                        </div>
+                        <p className="text-3xl font-black text-gray-800 text-right leading-none">
+                          {selectedEmp.skillsPassed || 0}
+                        </p>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-3xl px-5 py-4 border border-gray-100 flex items-center justify-between gap-4 min-h-[88px]">
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                            預估加級
+                          </p>
+                          <p className="text-sm text-gray-400 font-bold mt-2">
+                            依今年結果預估
+                          </p>
+                        </div>
+                        <p className="text-3xl font-black text-orange-600 text-right leading-none">
+                          {calculateFinalPay(selectedEmp)}
+                        </p>
+                      </div>
+
+                      <div className="bg-blue-50 rounded-3xl px-5 py-4 border border-blue-100 flex items-center justify-between gap-4 min-h-[88px]">
+                        <div>
+                          <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">
+                            當月積分
+                          </p>
+                          <p className="text-sm text-blue-400 font-bold mt-2">
+                            每月基本 {MONTHLY_BASE_POINTS} 分，加扣分後合計
+                          </p>
+                        </div>
+                        <p className="text-3xl font-black text-blue-700 text-right leading-none">
+                          {getEmployeeMonthlyPoints(selectedEmp.id, selectedMonth)}
+                        </p>
+                      </div>
+
+                      <div className="bg-orange-50 rounded-3xl px-5 py-4 border border-orange-100 flex items-center justify-between gap-4 min-h-[88px]">
+                        <div>
+                          <p className="text-[10px] text-orange-500 font-black uppercase tracking-widest">
+                            本月忘打卡次數
+                          </p>
+                          <p className="text-sm text-orange-400 font-bold mt-2">
+                            依目前選擇月份統計
+                          </p>
+                        </div>
+                        <p className="text-3xl font-black text-orange-600 text-right leading-none">
+                          {getEmployeeMonthlyMissedClockCount(selectedEmp.id, selectedMonth)}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1676,6 +2111,113 @@ const App = () => {
                     </div>
                   )}
                 </div>
+
+                <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="font-black text-gray-800 flex items-center gap-2">
+                      <Clock3 size={18} className="text-orange-500" />
+                      忘打卡申請
+                    </h3>
+                    <span className="text-[10px] text-gray-300 font-black uppercase tracking-widest">
+                      Employee Self Service
+                    </span>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4 mb-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">忘打卡日期</label>
+                      <input
+                        type="date"
+                        value={missedClockForm.requestDate}
+                        onChange={(e) =>
+                          setMissedClockForm((prev) => ({ ...prev, requestDate: e.target.value }))
+                        }
+                        className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">忘打卡時間</label>
+                      <input
+                        type="time"
+                        value={missedClockForm.requestTime}
+                        onChange={(e) =>
+                          setMissedClockForm((prev) => ({ ...prev, requestTime: e.target.value }))
+                        }
+                        className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 mb-4">
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">原因說明</label>
+                    <textarea
+                      value={missedClockForm.reason}
+                      onChange={(e) =>
+                        setMissedClockForm((prev) => ({ ...prev, reason: e.target.value }))
+                      }
+                      rows={3}
+                      className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-bold text-gray-700 focus:border-orange-400 outline-none transition-colors resize-none"
+                      placeholder="例如：早上尖峰太忙忘記補打卡"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleMissedClockRequest}
+                    className="w-full py-4 rounded-2xl bg-orange-600 text-white font-black hover:bg-orange-700 transition-colors flex items-center justify-center gap-2 mb-6"
+                    type="button"
+                  >
+                    <ArrowRight size={18} />
+                    送出忘打卡申請
+                  </button>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="font-black text-gray-800">我的申請紀錄</p>
+                      <span className="text-[10px] text-gray-300 font-black uppercase tracking-widest">最近 {selectedEmpMissedClockLogs.length} 筆</span>
+                    </div>
+
+                    {selectedEmpMissedClockLogs.length > 0 ? (
+                      selectedEmpMissedClockLogs.map((log) => (
+                        <div
+                          key={`missed-clock-${log.id}`}
+                          className="p-4 rounded-2xl bg-gray-50 border border-gray-100"
+                        >
+                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-black text-gray-800">
+                                  {log.requestDate || '-'} {log.requestTime || ''}
+                                </p>
+                                <span
+                                  className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                                    log.requestStatus === 'approved'
+                                      ? 'bg-green-100 text-green-700'
+                                      : log.requestStatus === 'rejected'
+                                      ? 'bg-red-100 text-red-700'
+                                      : 'bg-yellow-100 text-yellow-700'
+                                  }`}
+                                >
+                                  {log.requestStatus === 'approved'
+                                    ? '已批准'
+                                    : log.requestStatus === 'rejected'
+                                    ? '已退回'
+                                    : '待審核'}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-600 font-bold mt-2 leading-6">{log.note || '無原因說明'}</p>
+                              <p className="text-xs text-gray-400 font-bold mt-1">申請時間：{formatDateTime(log.timestamp)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-6 text-center text-gray-400 font-bold">
+                        目前尚無忘打卡申請紀錄
+                      </div>
+                    )}
+                  </div>
+                </div>
               </section>
             )}
           </div>
@@ -1684,7 +2226,7 @@ const App = () => {
         {activeTab === 'manager' && (
           <div className="space-y-6 animate-in slide-in-from-top-4 duration-300">
             <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
                 <div>
                   <h2 className="text-xl font-black flex items-center gap-2 text-gray-800">
                     <Store size={24} className="text-orange-600" />
@@ -1697,15 +2239,138 @@ const App = () => {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 bg-orange-50 px-4 py-2.5 rounded-2xl border border-orange-100 w-fit">
-                  <Calendar size={16} className="text-orange-600" />
-                  <input
-                    type="date"
-                    value={occurrenceDate}
-                    onChange={(e) => setOccurrenceDate(e.target.value)}
-                    className="bg-transparent text-sm font-black text-orange-700 outline-none cursor-pointer"
-                  />
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingEmp({
+                        name: '',
+                        shop: getStoreLabel(currentStoreId),
+                        startDate: new Date().toISOString().split('T')[0],
+                        currentPoints: DEFAULT_INITIAL_POINTS,
+                        initialPoints: DEFAULT_INITIAL_POINTS,
+                        lastYearLow: false,
+                        level: '一般夥伴',
+                        multiplier: 1,
+                        skillsPassed: 0,
+                        storeId: currentStoreId
+                      });
+                      setIsAddingNew(true);
+                    }}
+                    className="px-4 py-3 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2"
+                  >
+                    <PlusCircle size={18} />
+                    新增員工
+                  </button>
+
+                  <div className="flex items-center gap-2 bg-orange-50 px-4 py-2.5 rounded-2xl border border-orange-100 w-fit">
+                    <Calendar size={16} className="text-orange-600" />
+                    <input
+                      type="date"
+                      value={occurrenceDate}
+                      onChange={(e) => setOccurrenceDate(e.target.value)}
+                      className="bg-transparent text-sm font-black text-orange-700 outline-none cursor-pointer"
+                    />
+                  </div>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+                {sortedVisibleEmployees.map((emp) => {
+                  const assessment = getEmployeeAssessment(emp);
+                  const seniority = calculateSeniority(emp.startDate);
+                  const warnings = getEmployeeWarnings(emp);
+
+                  return (
+                    <div
+                      key={`manager-overview-${emp.id}`}
+                      className={`rounded-[2rem] border p-5 transition-all ${
+                        selectedEmpId === emp.id
+                          ? 'border-orange-300 bg-orange-50 shadow-lg shadow-orange-100'
+                          : 'border-gray-100 bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                            {getStoreLabel(emp.storeId)}
+                          </p>
+                          <h3 className="text-lg font-black text-gray-800 mt-1">{emp.name}</h3>
+                          <p className="text-xs text-gray-400 font-bold mt-1">
+                            {emp.level || '一般夥伴'}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`px-3 py-1 rounded-full text-xs font-black ${
+                            warnings.length > 0
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-green-100 text-green-700'
+                          }`}
+                        >
+                          {warnings.length > 0 ? '需要注意' : '狀態穩定'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">今年分數</p>
+                          <p className="text-xl font-black text-gray-800 mt-2">{assessment.thisYearPoints}</p>
+                        </div>
+                        <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
+                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">年資</p>
+                          <p className="text-base font-black text-gray-800 mt-2">{seniority.text}</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 mb-4">
+                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
+                          <span>技能通過</span>
+                          <span>{emp.skillsPassed || 0}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
+                          <span>本月忘打卡</span>
+                          <span className="text-orange-600">{getEmployeeMonthlyMissedClockCount(emp.id)} 次</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
+                          <span>當月積分</span>
+                          <span className="text-blue-600">{getEmployeeMonthlyPoints(emp.id)} 分</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
+                          <span>年度狀態</span>
+                          <span className={`px-2.5 py-1 rounded-full text-xs ${assessment.result.bg}`}>
+                            {assessment.result.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {warnings.length > 0 ? (
+                          warnings.slice(0, 3).map((warning) => (
+                            <span
+                              key={warning.key}
+                              className={`px-2.5 py-1 rounded-full border text-[11px] font-black ${getWarningBadgeClass(warning.level)}`}
+                            >
+                              {warning.label}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full border text-[11px] font-black bg-green-50 text-green-700 border-green-100">
+                            本月狀況正常
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmpId(emp.id)}
+                        className="w-full py-3 rounded-2xl bg-white border border-gray-200 text-gray-700 font-black hover:border-orange-300 hover:text-orange-600 transition-colors"
+                      >
+                        {selectedEmpId === emp.id ? '目前選取中' : '選取這位夥伴'}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="flex gap-3 mb-10 overflow-x-auto pb-4">
@@ -1904,14 +2569,15 @@ const App = () => {
 
                             <button
                               onClick={() => {
-                                const targetEmp = employees.find(
-                                  (emp) => emp.id === log.empId
-                                );
-                                if (!targetEmp || !log.storeId) return;
-
-                                deleteDoc(doc(db, 'stores', log.storeId, 'logs', log.id));
+                                if (log.actionType !== 'score_change') return;
+                                handleDeleteScoreLog(log);
                               }}
-                              className="w-11 h-11 rounded-2xl bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
+                              className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-colors ${
+                                log.actionType === 'score_change'
+                                  ? 'bg-gray-50 hover:bg-gray-100 text-gray-500'
+                                  : 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                              }`}
+                              title={log.actionType === 'score_change' ? '刪除這筆加扣分並留下紀錄' : '只有原始加扣分紀錄可刪除'}
                               type="button"
                             >
                               <RotateCcw size={18} />
@@ -2045,7 +2711,7 @@ const App = () => {
                   </p>
                 </div>
 
-                <div className="grid sm:grid-cols-3 gap-3 w-full xl:w-auto">
+                <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 w-full xl:w-auto">
                   <input
                     type="text"
                     value={adminSearch}
@@ -2075,6 +2741,15 @@ const App = () => {
                     <option value="C">C 重罰</option>
                     <option value="D">D 淘汰</option>
                   </select>
+
+                  <button
+                    type="button"
+                    onClick={exportEmployeesToExcel}
+                    className="px-4 py-3 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2"
+                  >
+                    <Save size={16} />
+                    快速匯出 Excel
+                  </button>
                 </div>
               </div>
 
@@ -2169,9 +2844,10 @@ const App = () => {
                                     currentPoints: emp.assessment.thisYearPoints
                                   })
                                 }
-                                className="w-10 h-10 rounded-2xl bg-gray-50 hover:bg-gray-100 flex items-center justify-center text-gray-600 transition-colors"
+                                className="px-3 h-10 rounded-2xl bg-gray-50 hover:bg-gray-100 inline-flex items-center justify-center gap-2 text-gray-700 font-black transition-colors"
                               >
                                 <Edit3 size={16} />
+                                編輯
                               </button>
                               <button
                                 type="button"
@@ -2193,6 +2869,140 @@ const App = () => {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </section>
+
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-5">
+                <div>
+                  <h3 className="font-black text-gray-800 flex items-center gap-2">
+                    <Clock3 size={18} className="text-orange-500" />
+                    忘打卡申請審核
+                  </h3>
+                  <p className="text-xs text-gray-400 font-bold mt-1">
+                    管理員可查看員工忘打卡日期時間、原因，並直接批准、退回或刪除申請
+                  </p>
+                </div>
+                <span className="text-[10px] text-gray-300 font-black uppercase tracking-widest">
+                  待審核 {pendingMissedClockRequests.length} 筆
+                </span>
+              </div>
+
+              {pendingMissedClockRequests.length > 0 ? (
+                <div className="space-y-3 mb-6">
+                  {pendingMissedClockRequests.map((log) => (
+                    <div
+                      key={`pending-${log.id}`}
+                      className="p-4 rounded-2xl bg-orange-50 border border-orange-100 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4"
+                    >
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-black text-gray-800">{log.name || '未指定員工'}</p>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-orange-200 text-orange-600">
+                            {getStoreLabel(log.storeId)}
+                          </span>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-yellow-100 text-yellow-700">
+                            待審核
+                          </span>
+                        </div>
+                        <p className="text-sm font-black text-gray-700 mt-2">
+                          忘打卡時間：{log.requestDate || log.occurrenceDate || '-'} {log.requestTime || ''}
+                        </p>
+                        <p className="text-sm text-gray-600 font-bold mt-2 leading-6">原因：{log.note || '未填寫'}</p>
+                        <p className="text-xs text-gray-400 font-bold mt-2">申請時間：{formatDateTime(log.timestamp)}</p>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 xl:w-[390px]">
+                        <button
+                          type="button"
+                          onClick={() => handleMissedClockReview(log, 'approved')}
+                          className="py-3 rounded-2xl bg-green-600 text-white font-black hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <CheckCircle2 size={18} />
+                          批准
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMissedClockReview(log, 'rejected')}
+                          className="py-3 rounded-2xl bg-red-600 text-white font-black hover:bg-red-700 transition-colors"
+                        >
+                          退回
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMissedClockRequest(log)}
+                          className="py-3 rounded-2xl bg-gray-900 text-white font-black hover:bg-black transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Trash2 size={16} />
+                          刪除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-8 text-center text-gray-400 font-bold mb-6">
+                  目前沒有待審核的忘打卡申請
+                </div>
+              )}
+
+              <div>
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <h4 className="font-black text-gray-800">最近已審核申請</h4>
+                  <span className="text-[10px] text-gray-300 font-black uppercase tracking-widest">最新 {reviewedMissedClockRequests.length} 筆</span>
+                </div>
+
+                {reviewedMissedClockRequests.length > 0 ? (
+                  <div className="space-y-3">
+                    {reviewedMissedClockRequests.map((log) => (
+                      <div
+                        key={`reviewed-${log.id}`}
+                        className="p-4 rounded-2xl bg-gray-50 border border-gray-100"
+                      >
+                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-black text-gray-800">{log.name || '未指定員工'}</p>
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500">
+                                {getStoreLabel(log.storeId)}
+                              </span>
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
+                                log.requestStatus === 'approved'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-red-100 text-red-700'
+                              }`}>
+                                {log.requestStatus === 'approved' ? '已批准' : '已退回'}
+                              </span>
+                            </div>
+                            <p className="text-sm font-black text-gray-700 mt-2">
+                              忘打卡時間：{log.requestDate || log.occurrenceDate || '-'} {log.requestTime || ''}
+                            </p>
+                            <p className="text-sm text-gray-600 font-bold mt-2 leading-6">原因：{log.note || '未填寫'}</p>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-xs text-gray-400 font-bold leading-6 text-right">
+                              <div>申請：{formatDateTime(log.timestamp)}</div>
+                              <div>審核：{formatDateTime(log.reviewedAt)}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMissedClockRequest(log)}
+                              className="px-4 py-3 rounded-2xl bg-gray-900 text-white font-black hover:bg-black transition-colors flex items-center justify-center gap-2"
+                            >
+                              <Trash2 size={16} />
+                              刪除
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-6 text-center text-gray-400 font-bold">
+                    目前尚無已審核申請
+                  </div>
+                )}
               </div>
             </section>
 
