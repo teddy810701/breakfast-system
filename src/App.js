@@ -120,6 +120,10 @@ const App = () => {
 
   const currentStoreId = currentManager?.storeId || null;
 
+  const normalizeBirthdayId = (value) => {
+    return String(value || '').replace(/\D/g, '').slice(0, 4);
+  };
+
   const showMessage = (text, type = 'info') => {
     setSystemMessage({ text, type });
     setTimeout(() => setSystemMessage(null), 3000);
@@ -652,6 +656,12 @@ const App = () => {
       return;
     }
 
+    const birthdayId = normalizeBirthdayId(editingEmp?.birthdayId);
+    if (birthdayId && birthdayId.length !== 4) {
+      showMessage('生日月日請輸入 4 碼，例如 0512', 'error');
+      return;
+    }
+
     const storeId =
       editingEmp?.storeId ||
       (activeTab === 'manager' ? currentStoreId : null);
@@ -664,6 +674,7 @@ const App = () => {
     try {
       const newEmpRef = await addDoc(collection(db, 'stores', storeId, 'employees'), {
         ...editingEmp,
+        birthdayId,
         storeId,
         shop: getStoreLabel(storeId),
         currentPoints: editingEmp.initialPoints || DEFAULT_INITIAL_POINTS
@@ -806,11 +817,18 @@ const App = () => {
       return;
     }
 
+    const birthdayId = normalizeBirthdayId(editingEmp?.birthdayId);
+    if (birthdayId && birthdayId.length !== 4) {
+      showMessage('生日月日請輸入 4 碼，例如 0512', 'error');
+      return;
+    }
+
     try {
       await updateDoc(
         doc(db, 'stores', editingEmp.storeId, 'employees', editingEmp.id),
         {
           ...editingEmp,
+          birthdayId,
           shop: getStoreLabel(editingEmp.storeId)
         }
       );
@@ -1404,6 +1422,29 @@ const App = () => {
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
                     placeholder="輸入姓名"
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    生日月日（打卡ID）
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={editingEmp.birthdayId || ''}
+                    onChange={(e) =>
+                      setEditingEmp({
+                        ...editingEmp,
+                        birthdayId: normalizeBirthdayId(e.target.value)
+                      })
+                    }
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
+                    placeholder="例如 0512"
+                  />
+                  <p className="text-[10px] text-gray-400 font-bold ml-1">
+                    只存在員工資料，用來對應打卡系統，不會在列表顯示。
+                  </p>
                 </div>
 
                 <div className="space-y-1.5">
@@ -2328,6 +2369,7 @@ const App = () => {
                     onClick={() => {
                       setEditingEmp({
                         name: '',
+                        birthdayId: '',
                         shop: getStoreLabel(currentStoreId),
                         startDate: new Date().toISOString().split('T')[0],
                         currentPoints: DEFAULT_INITIAL_POINTS,
@@ -2603,6 +2645,7 @@ const App = () => {
                         onClick={() => {
                           setEditingEmp({
                             name: '',
+                            birthdayId: '',
                             shop: getStoreLabel(currentStoreId),
                             startDate: new Date().toISOString().split('T')[0],
                             currentPoints: DEFAULT_INITIAL_POINTS,
@@ -2684,6 +2727,7 @@ const App = () => {
                       onClick={() => {
                         setEditingEmp({
                           name: '',
+                          birthdayId: '',
                           shop: getStoreLabel(currentStoreId),
                           startDate: new Date().toISOString().split('T')[0],
                           currentPoints: DEFAULT_INITIAL_POINTS,
@@ -2737,6 +2781,7 @@ const App = () => {
                     onClick={() => {
                       setEditingEmp({
                         name: '',
+                        birthdayId: '',
                         shop: '',
                         startDate: new Date().toISOString().split('T')[0],
                         currentPoints: DEFAULT_INITIAL_POINTS,
