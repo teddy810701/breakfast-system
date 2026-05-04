@@ -908,7 +908,7 @@ const App = () => {
     return [...employees].sort((a, b) => {
       const aPoints = getEmployeeYearPoints(a, getCurrentYear());
       const bPoints = getEmployeeYearPoints(b, getCurrentYear());
-      return bPoints - aPoints;
+      return aPoints - bPoints;
     });
   }, [employees, getEmployeeYearPoints]);
 
@@ -916,7 +916,7 @@ const App = () => {
     return [...visibleEmployees].sort((a, b) => {
       const aPoints = getEmployeeYearPoints(a, getCurrentYear());
       const bPoints = getEmployeeYearPoints(b, getCurrentYear());
-      return bPoints - aPoints;
+      return aPoints - bPoints;
     });
   }, [visibleEmployees, getEmployeeYearPoints]);
 
