@@ -1,4 +1,6 @@
-import { db } from './firebase';
+/* eslint-disable */
+import { db, auth } from './firebase';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import {
   collection,
   addDoc,
@@ -28,6 +30,7 @@ import {
   Save,
   Settings,
   CheckCircle2,
+  Cloud,
   Clock3
 } from 'lucide-react';
 
@@ -88,6 +91,8 @@ const App = () => {
 
   const [authConfig, setAuthConfig] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
+  const [firebaseUser, setFirebaseUser] = useState(null);
 
   const [passwordPanel, setPasswordPanel] = useState({
     adminPassword: '',
@@ -319,8 +324,33 @@ const App = () => {
     },
     [getEmployeeAssessment]
   );
+  // ===== Firebase 正式版匿名登入 =====
+  // Firestore 正式規則會要求 request.auth != null，
+  // 所以系統載入時先自動匿名登入，再讀取 stores / settings 資料。
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      try {
+        if (user) {
+          setFirebaseUser(user);
+          setFirebaseAuthReady(true);
+          return;
+        }
+
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error('Firebase 匿名登入失敗:', error);
+        setFirebaseAuthReady(true);
+        showMessage('Firebase 登入失敗，請確認 Anonymous 已啟用', 'error');
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
   // ===== Firebase 初始化（權限設定） =====
   useEffect(() => {
+    if (!firebaseAuthReady) return;
+
     const initAuthConfig = async () => {
       try {
         const ref = doc(db, 'settings', 'auth');
@@ -354,26 +384,51 @@ const App = () => {
           const data = snap.data();
           setAuthConfig(data);
           setPasswordPanel({
-            adminPassword: data.adminPassword,
-            managerAName: data.managerA.name,
-            managerAPassword: data.managerA.password,
-            managerBName: data.managerB.name,
-            managerBPassword: data.managerB.password
+            adminPassword: data.adminPassword || '9999',
+            managerAName: data.managerA?.name || '店長A',
+            managerAPassword: data.managerA?.password || 'a8888',
+            managerBName: data.managerB?.name || '店長B',
+            managerBPassword: data.managerB?.password || 'b8888'
           });
         }
       } catch (e) {
-        console.error(e);
+        console.error('讀取 Firebase 權限設定失敗:', e);
+        const fallbackData = {
+          adminPassword: '9999',
+          managerA: { name: '店長A', password: 'a8888', storeId: 'storeA' },
+          managerB: { name: '店長B', password: 'b8888', storeId: 'storeB' }
+        };
+        setAuthConfig(fallbackData);
+        setPasswordPanel({
+          adminPassword: fallbackData.adminPassword,
+          managerAName: fallbackData.managerA.name,
+          managerAPassword: fallbackData.managerA.password,
+          managerBName: fallbackData.managerB.name,
+          managerBPassword: fallbackData.managerB.password
+        });
+        showMessage('讀取權限設定失敗，已暫用預設密碼 9999', 'error');
       } finally {
         setAuthReady(true);
       }
     };
 
     initAuthConfig();
-  }, []);
+  }, [firebaseAuthReady]);
 
   // ===== Firebase 即時資料 =====
   useEffect(() => {
+    if (!authReady || !firebaseUser) return;
+
     const unsubs = [];
+
+    // 確保分店主文件存在，避免 Firebase Console 顯示「此文件不存在」造成誤判。
+    ['storeA', 'storeB'].forEach((storeId) => {
+      setDoc(
+        doc(db, 'stores', storeId),
+        { name: getStoreLabel(storeId), active: true, updatedAt: new Date().toISOString() },
+        { merge: true }
+      ).catch((error) => console.warn(`建立 ${storeId} 主文件失敗:`, error));
+    });
 
     ['storeA', 'storeB'].forEach((storeId) => {
       const unsubEmp = onSnapshot(
@@ -390,6 +445,10 @@ const App = () => {
 
             return [...others, ...data];
           });
+        },
+        (error) => {
+          console.error(`讀取 ${storeId} 員工失敗:`, error);
+          showMessage('讀取員工資料失敗，請檢查 Firestore 規則', 'error');
         }
       );
 
@@ -407,6 +466,10 @@ const App = () => {
 
             return [...others, ...data];
           });
+        },
+        (error) => {
+          console.error(`讀取 ${storeId} 紀錄失敗:`, error);
+          showMessage('讀取操作紀錄失敗，請檢查 Firestore 規則', 'error');
         }
       );
 
@@ -414,25 +477,34 @@ const App = () => {
     });
 
     return () => unsubs.forEach((u) => u && u());
-  }, []);
+  }, [authReady, firebaseUser, getStoreLabel]);
 
   // ===== 登入 =====
   const handleAuth = (e) => {
     e.preventDefault();
 
+    const inputPassword = String(passwordInput || '').trim();
+    const config = authConfig || {
+      adminPassword: '9999',
+      managerA: { name: '店長A', password: 'a8888', storeId: 'storeA' },
+      managerB: { name: '店長B', password: 'b8888', storeId: 'storeB' }
+    };
+
     if (authMode === 'admin') {
-      if (passwordInput === authConfig.adminPassword) {
+      const adminPassword = String(config.adminPassword || '9999').trim();
+      if (inputPassword === adminPassword) {
         setActiveTab('admin');
         setAuthMode(null);
       } else {
-        showMessage('密碼錯誤', 'error');
+        showMessage('密碼錯誤，請確認 Firebase settings/auth 的 adminPassword', 'error');
       }
     }
 
     if (authMode === 'manager') {
-      const data = authConfig[managerLoginKey];
+      const data = config[managerLoginKey];
+      const managerPassword = String(data?.password || '').trim();
 
-      if (passwordInput === data.password) {
+      if (inputPassword === managerPassword) {
         setCurrentManager({
           name: data.name,
           storeId: data.storeId,
@@ -441,7 +513,7 @@ const App = () => {
         setActiveTab('manager');
         setAuthMode(null);
       } else {
-        showMessage('密碼錯誤', 'error');
+        showMessage('密碼錯誤，請確認 Firebase settings/auth 的店長密碼', 'error');
       }
     }
 
@@ -1204,6 +1276,7 @@ const App = () => {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="bg-white rounded-[2rem] shadow-xl border border-gray-100 px-8 py-6">
           <p className="font-black text-gray-700">系統載入中...</p>
+          <p className="text-xs text-gray-400 font-bold mt-2">正在進行 Firebase 正式版安全登入</p>
         </div>
       </div>
     );
@@ -1682,6 +1755,16 @@ const App = () => {
           </div>
 
           <div className="flex bg-gray-100 p-1 rounded-xl gap-1 border border-gray-200">
+            <button
+              onClick={() => window.open('https://yuchinyuxian.quickconnect.to/d/s/186Vedg15q40Guighjofsun0kdaXKNrV/VFvQfyzlaq7tHfK_BUVdvlop3-PSq2rC-ALkgpXiWKw0', '_blank', 'noopener,noreferrer')}
+              title="前往公司雲端"
+              className="px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 text-gray-400 hover:text-blue-600 hover:bg-white"
+              type="button"
+            >
+              <Cloud size={14} />
+              <span className="hidden sm:inline">雲端</span>
+            </button>
+
             <button
               onClick={() => window.location.href = 'https://work-checkin.vercel.app/'}
               title="前往打卡系統"
