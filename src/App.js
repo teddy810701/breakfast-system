@@ -76,7 +76,7 @@ const App = () => {
   const [currentManager, setCurrentManager] = useState(null);
 
   const [selectedItemLabel, setSelectedItemLabel] = useState('');
-  const [customPoints, setCustomPoints] = useState(0);
+  const [customPoints, setCustomPoints] = useState('0');
   const [occurrenceDate, setOccurrenceDate] = useState(
     new Date().toISOString().split('T')[0]
   );
@@ -730,7 +730,7 @@ const App = () => {
 
       setNote('');
       setSelectedItemLabel('');
-      setCustomPoints(0);
+      setCustomPoints('0');
       showMessage('紀錄已新增', 'success');
     } catch (error) {
       console.error('新增紀錄失敗:', error);
@@ -2542,7 +2542,7 @@ const App = () => {
                             ...PERFORMANCE_ITEMS.bonus
                           ];
                           const item = allItems.find((i) => i.label === label);
-                          if (item) setCustomPoints(item.val);
+                          if (item) setCustomPoints(String(item.val));
                         }}
                         className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors appearance-none"
                       >
@@ -2569,12 +2569,18 @@ const App = () => {
                         點數
                       </label>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="-?[0-9]*"
                         value={customPoints}
-                        onChange={(e) =>
-                          setCustomPoints(parseInt(e.target.value, 10) || 0)
-                        }
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (/^-?\d*$/.test(value)) {
+                            setCustomPoints(value);
+                          }
+                        }}
                         className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                        placeholder="例如 -10 或 5"
                       />
                     </div>
                   </div>
@@ -2599,9 +2605,18 @@ const App = () => {
                           showMessage('請先選擇考核項目', 'error');
                           return;
                         }
+                        const pointsValue = Number(customPoints);
+                        if (
+                          customPoints === '' ||
+                          customPoints === '-' ||
+                          Number.isNaN(pointsValue)
+                        ) {
+                          showMessage('請輸入正確點數，可輸入負分例如 -10', 'error');
+                          return;
+                        }
                         handlePointChange(
                           selectedEmp.id,
-                          customPoints,
+                          pointsValue,
                           selectedItemLabel
                         );
                       }}
