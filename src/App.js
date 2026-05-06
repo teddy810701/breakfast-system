@@ -2542,7 +2542,7 @@ const App = () => {
                             ...PERFORMANCE_ITEMS.bonus
                           ];
                           const item = allItems.find((i) => i.label === label);
-                          if (item) setCustomPoints(String(item.val));
+                          if (item) setCustomPoints(item.val);
                         }}
                         className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors appearance-none"
                       >
@@ -2568,20 +2568,30 @@ const App = () => {
                       <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
                         點數
                       </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="-?[0-9]*"
-                        value={customPoints}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (/^-?\d*$/.test(value)) {
-                            setCustomPoints(value);
-                          }
-                        }}
-                        className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
-                        placeholder="例如 -10 或 5"
-                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const raw = String(customPoints || '0');
+                            const normalized = raw.startsWith('-') ? raw.slice(1) || '0' : `-${raw || '0'}`;
+                            setCustomPoints(normalized);
+                          }}
+                          className="w-16 shrink-0 bg-orange-50 border-2 border-orange-200 px-4 py-4 rounded-2xl font-black text-orange-600 hover:bg-orange-100 transition-colors"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={customPoints}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (/^-?\d*$/.test(value)) setCustomPoints(value);
+                          }}
+                          placeholder="例如 -10 或 5"
+                          className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -2605,18 +2615,14 @@ const App = () => {
                           showMessage('請先選擇考核項目', 'error');
                           return;
                         }
-                        const pointsValue = Number(customPoints);
-                        if (
-                          customPoints === '' ||
-                          customPoints === '-' ||
-                          Number.isNaN(pointsValue)
-                        ) {
-                          showMessage('請輸入正確點數，可輸入負分例如 -10', 'error');
+                        const scoreAmount = Number(customPoints);
+                        if (customPoints === '' || customPoints === '-' || Number.isNaN(scoreAmount)) {
+                          showMessage('請輸入正確點數，例如 -10 或 5', 'error');
                           return;
                         }
                         handlePointChange(
                           selectedEmp.id,
-                          pointsValue,
+                          scoreAmount,
                           selectedItemLabel
                         );
                       }}
