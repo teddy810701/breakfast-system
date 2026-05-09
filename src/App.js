@@ -85,6 +85,8 @@ const App = () => {
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().substring(0, 7)
   );
+  const [personalLogCategory, setPersonalLogCategory] = useState('all');
+  const [personalLogSearch, setPersonalLogSearch] = useState('');
   const [editingEmp, setEditingEmp] = useState(null);
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [deletingEmpId, setDeletingEmpId] = useState(null);
@@ -213,6 +215,34 @@ const App = () => {
 
   const sortLogsByNewestFirst = (list) => {
     return [...list].sort((a, b) => getLogSortTime(b) - getLogSortTime(a));
+  };
+
+  const getPersonalLogCategory = (log) => {
+    const actionType = String(log?.actionType || '');
+    const reason = String(log?.reason || '');
+    const amount = Number(log?.amount) || 0;
+
+    if (actionType.includes('missed_clock') || reason.includes('忘打卡')) {
+      return 'missedClock';
+    }
+
+    if (actionType === 'score_change' || actionType === 'delete_score_change' || amount !== 0) {
+      return 'score';
+    }
+
+    return 'other';
+  };
+
+  const getPersonalLogCategoryLabel = (category) => {
+    if (category === 'score') return '加扣分';
+    if (category === 'missedClock') return '忘打卡';
+    return '其他';
+  };
+
+  const getPersonalLogCategoryClass = (category) => {
+    if (category === 'score') return 'bg-blue-50 text-blue-600 border-blue-100';
+    if (category === 'missedClock') return 'bg-orange-50 text-orange-600 border-orange-100';
+    return 'bg-gray-100 text-gray-500 border-gray-200';
   };
 
   const getCurrentYear = () => new Date().getFullYear();
@@ -918,7 +948,7 @@ const App = () => {
     visibleEmployees.find((e) => e.id === selectedEmpId) ||
     null;
 
-  const filteredPersonalLogs = sortLogsByNewestFirst(
+  const monthlyPersonalLogs = sortLogsByNewestFirst(
     logs
       .filter((log) => log.empId === selectedEmp?.id)
       .filter((log) => {
@@ -926,6 +956,32 @@ const App = () => {
         return monthKey === selectedMonth;
       })
   );
+
+  const filteredPersonalLogs = monthlyPersonalLogs.filter((log) => {
+    const category = getPersonalLogCategory(log);
+    const keyword = personalLogSearch.trim().toLowerCase();
+
+    const matchesCategory =
+      personalLogCategory === 'all' || category === personalLogCategory;
+
+    const searchableText = [
+      log.reason,
+      log.note,
+      log.name,
+      log.operator,
+      log.requestDate,
+      log.requestTime,
+      log.requestDateTime,
+      log.occurrenceDate
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    const matchesSearch = !keyword || searchableText.includes(keyword);
+
+    return matchesCategory && matchesSearch;
+  });
 
   const managerViewLogs = sortLogsByNewestFirst(
     logs
@@ -2242,18 +2298,55 @@ const App = () => {
                 </div>
 
                 <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
-                  <div className="flex items-center justify-between mb-5">
-                    <h3 className="font-black text-gray-800 flex items-center gap-2">
-                      <History size={18} className="text-gray-400" />
-                      當月紀錄
-                    </h3>
-                    <span className="text-[10px] text-gray-300 font-black uppercase tracking-widest">
-                      {selectedMonth}
-                    </span>
+                  <div className="flex flex-col gap-4 mb-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="font-black text-gray-800 flex items-center gap-2">
+                        <History size={18} className="text-gray-400" />
+                        當月紀錄
+                      </h3>
+                      <span className="text-[10px] text-gray-300 font-black uppercase tracking-widest">
+                        {selectedMonth}・{filteredPersonalLogs.length}/{monthlyPersonalLogs.length} 筆
+                      </span>
+                    </div>
+
+                    <div className="grid md:grid-cols-[1fr_auto] gap-3">
+                      <div className="relative">
+                        <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" />
+                        <input
+                          type="text"
+                          value={personalLogSearch}
+                          onChange={(e) => setPersonalLogSearch(e.target.value)}
+                          placeholder="搜尋紀錄、備註、日期、操作人"
+                          className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold outline-none focus:border-orange-400"
+                        />
+                      </div>
+
+                      <div className="flex bg-gray-100 p-1 rounded-2xl border border-gray-200 overflow-x-auto">
+                        {[
+                          { key: 'all', label: '全部' },
+                          { key: 'score', label: '加扣分' },
+                          { key: 'missedClock', label: '忘打卡' },
+                          { key: 'other', label: '其他' }
+                        ].map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => setPersonalLogCategory(item.key)}
+                            className={`px-3 py-2 rounded-xl text-xs font-black whitespace-nowrap transition ${
+                              personalLogCategory === item.key
+                                ? 'bg-white text-orange-600 shadow-sm'
+                                : 'text-gray-400 hover:text-gray-600'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   {filteredPersonalLogs.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="space-y-3 max-h-[420px] overflow-y-auto pr-2 overscroll-contain">
                       {filteredPersonalLogs.map((log) => (
                         <div
                           key={log.id}
@@ -2272,7 +2365,16 @@ const App = () => {
                             </div>
 
                             <div>
-                              <p className="font-black text-gray-800">{log.reason}</p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-black text-gray-800">{log.reason}</p>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full border text-[10px] font-black ${getPersonalLogCategoryClass(
+                                    getPersonalLogCategory(log)
+                                  )}`}
+                                >
+                                  {getPersonalLogCategoryLabel(getPersonalLogCategory(log))}
+                                </span>
+                              </div>
                               <p className="text-xs text-gray-400 mt-1">
                                 {formatDate(log.occurrenceDate)}
                                 {log.note ? ` · ${log.note}` : ''}
@@ -2288,7 +2390,7 @@ const App = () => {
                     </div>
                   ) : (
                     <div className="bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-8 text-center text-gray-400 font-bold">
-                      本月尚無紀錄
+                      沒有符合條件的紀錄
                     </div>
                   )}
                 </div>
