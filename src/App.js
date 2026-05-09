@@ -165,10 +165,54 @@ const App = () => {
   const toJsDate = (value) => {
     if (!value) return null;
     if (value instanceof Date) return value;
-    if (typeof value === 'string') return new Date(value);
+
+    if (typeof value === 'string') {
+      const raw = value.trim();
+
+      // Safari / 手機瀏覽器對 2026/5/9、2026-5-9、2026-05-09T08:30
+      // 的解析有時不穩，統一手動轉成台灣本地時間，排序才不會亂。
+      const match = raw.match(
+        /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/
+      );
+
+      if (match) {
+        const [, year, month, day, hour = '0', minute = '0', second = '0'] = match;
+        return new Date(
+          Number(year),
+          Number(month) - 1,
+          Number(day),
+          Number(hour),
+          Number(minute),
+          Number(second)
+        );
+      }
+
+      return new Date(raw);
+    }
+
     if (value?.toDate) return value.toDate();
     if (value?.seconds) return new Date(value.seconds * 1000);
     return new Date(value);
+  };
+
+  const getLogSortTime = (log) => {
+    // 先用實際建立時間排序；如果舊資料沒有 timestamp，再用發生日期。
+    // 同一天多筆資料時，timestamp 可以讓最新新增的紀錄排在前面。
+    const mainTime = toJsDate(
+      log?.timestamp ||
+        log?.requestDateTime ||
+        log?.createdAt ||
+        log?.occurrenceDate
+    )?.getTime();
+
+    if (Number.isFinite(mainTime)) return mainTime;
+
+    const fallbackTime = toJsDate(log?.occurrenceDate)?.getTime();
+    return Number.isFinite(fallbackTime) ? fallbackTime : 0;
+  };
+
+  const sortLogsByNewestFirst = (list) => {
+    return [...list].sort((a, b) => getLogSortTime(b) - getLogSortTime(a));
   };
 
   const getCurrentYear = () => new Date().getFullYear();
@@ -553,6 +597,7 @@ const App = () => {
         requestTime: missedClockForm.requestTime,
         requestDateTime,
         timestamp: new Date().toISOString(),
+        createdAt: Date.now(),
         name: selectedEmp.name,
         operator: selectedEmp.name,
         operatorKey: 'employee_request',
@@ -595,6 +640,7 @@ const App = () => {
         note: `${log.name || '員工'}｜${log.requestDate || log.occurrenceDate || ''} ${log.requestTime || ''}｜原因：${log.note || '未填寫'}`,
         occurrenceDate: new Date().toISOString().split('T')[0],
         timestamp: new Date().toISOString(),
+        createdAt: Date.now(),
         name: log.name || '未知員工',
         operator: '管理員',
         operatorKey: 'admin',
@@ -629,6 +675,7 @@ const App = () => {
         note: `${log.name || '員工'}｜${log.requestDate || log.occurrenceDate || ''} ${log.requestTime || ''}｜狀態：${log.requestStatus || 'pending'}｜原因：${log.note || '未填寫'}`,
         occurrenceDate: new Date().toISOString().split('T')[0],
         timestamp: new Date().toISOString(),
+        createdAt: Date.now(),
         name: log.name || '未知員工',
         operator: '管理員',
         operatorKey: 'admin',
@@ -687,6 +734,7 @@ const App = () => {
         note: `${editingEmp.name} 已被新增`,
         occurrenceDate: new Date().toISOString().split('T')[0],
         timestamp: new Date().toISOString(),
+        createdAt: Date.now(),
         name: editingEmp.name,
         operator: currentManager?.name || '管理員',
         operatorKey: currentManager?.key || 'admin',
@@ -720,6 +768,7 @@ const App = () => {
         note,
         occurrenceDate,
         timestamp: new Date().toISOString(),
+        createdAt: Date.now(),
         name: emp.name,
         operator: currentManager?.name || '管理員',
         operatorKey: currentManager?.key || 'admin',
@@ -752,6 +801,7 @@ const App = () => {
         note: `已刪除「${log.reason || '未命名項目'}」${Number(log.amount) || 0} 分`,
         occurrenceDate: new Date().toISOString().split('T')[0],
         timestamp: new Date().toISOString(),
+        createdAt: Date.now(),
         name: log.name || '未知員工',
         operator: currentManager?.name || '管理員',
         operatorKey: currentManager?.key || 'admin',
@@ -791,6 +841,7 @@ const App = () => {
         note: `${emp.name} 的員工資料已被刪除`,
         occurrenceDate: new Date().toISOString().split('T')[0],
         timestamp: new Date().toISOString(),
+        createdAt: Date.now(),
         operator: currentManager?.name || '管理員',
         operatorKey: currentManager?.key || 'admin',
         operatorStoreId: currentManager?.storeId || emp.storeId,
@@ -840,6 +891,7 @@ const App = () => {
         note: `${editingEmp.name} 資料已被修改`,
         occurrenceDate: new Date().toISOString().split('T')[0],
         timestamp: new Date().toISOString(),
+        createdAt: Date.now(),
         name: editingEmp.name,
         operator: currentManager?.name || '管理員',
         operatorKey: currentManager?.key || 'admin',
@@ -866,17 +918,20 @@ const App = () => {
     visibleEmployees.find((e) => e.id === selectedEmpId) ||
     null;
 
-  const filteredPersonalLogs = logs
-    .filter((log) => log.empId === selectedEmp?.id)
-    .filter((log) => {
-      const monthKey = getMonthKeyFromDate(log.occurrenceDate || log.timestamp);
-      return monthKey === selectedMonth;
-    });
+  const filteredPersonalLogs = sortLogsByNewestFirst(
+    logs
+      .filter((log) => log.empId === selectedEmp?.id)
+      .filter((log) => {
+        const monthKey = getMonthKeyFromDate(log.occurrenceDate || log.timestamp);
+        return monthKey === selectedMonth;
+      })
+  );
 
-  const managerViewLogs = logs
-    .filter((log) => log.empId === selectedEmpId)
-    .filter((log) => !currentStoreId || log.storeId === currentStoreId)
-    .slice(0, 10);
+  const managerViewLogs = sortLogsByNewestFirst(
+    logs
+      .filter((log) => log.empId === selectedEmpId)
+      .filter((log) => !currentStoreId || log.storeId === currentStoreId)
+  ).slice(0, 10);
 
   const employeeMissedClockLogs = useMemo(() => {
     return [...logs]
@@ -939,10 +994,12 @@ const App = () => {
   }, [visibleEmployees, getEmployeeYearPoints]);
 
   const getEmployeeMonthLogs = (empId, monthKey = getCurrentMonthKey()) => {
-    return logs.filter((log) => {
-      if (log.empId !== empId) return false;
-      return getMonthKeyFromDate(log.occurrenceDate || log.timestamp) === monthKey;
-    });
+    return sortLogsByNewestFirst(
+      logs.filter((log) => {
+        if (log.empId !== empId) return false;
+        return getMonthKeyFromDate(log.occurrenceDate || log.timestamp) === monthKey;
+      })
+    );
   };
 
   const getEmployeeMonthlyPoints = (empId, monthKey = getCurrentMonthKey()) => {
