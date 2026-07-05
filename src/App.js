@@ -904,32 +904,56 @@ const App = () => {
       return;
     }
 
-    try {
-      await updateDoc(
-        doc(db, 'stores', editingEmp.storeId, 'employees', editingEmp.id),
-        {
-          ...editingEmp,
-          birthdayId,
-          shop: getStoreLabel(editingEmp.storeId)
-        }
-      );
+    const sourceStoreId = editingEmp._originalStoreId || editingEmp.storeId;
+    const targetStoreId = editingEmp.storeId;
+    const { _originalStoreId, ...employeePayload } = editingEmp;
 
-      await addDoc(collection(db, 'stores', editingEmp.storeId, 'logs'), {
+    try {
+      const payload = {
+        ...employeePayload,
+        birthdayId,
+        storeId: targetStoreId,
+        shop: getStoreLabel(targetStoreId)
+      };
+
+      if (sourceStoreId !== targetStoreId) {
+        await setDoc(
+          doc(db, 'stores', targetStoreId, 'employees', editingEmp.id),
+          payload
+        );
+
+        await deleteDoc(
+          doc(db, 'stores', sourceStoreId, 'employees', editingEmp.id)
+        );
+      } else {
+        await updateDoc(
+          doc(db, 'stores', targetStoreId, 'employees', editingEmp.id),
+          payload
+        );
+      }
+
+      await addDoc(collection(db, 'stores', targetStoreId, 'logs'), {
         empId: editingEmp.id,
         amount: 0,
-        reason: '修改員工資料',
-        note: `${editingEmp.name} 資料已被修改`,
+        reason: sourceStoreId !== targetStoreId ? '修改員工店別' : '修改員工資料',
+        note:
+          sourceStoreId !== targetStoreId
+            ? `${editingEmp.name} 店別由 ${getStoreLabel(sourceStoreId)} 改為 ${getStoreLabel(targetStoreId)}`
+            : `${editingEmp.name} 資料已被修改`,
         occurrenceDate: new Date().toISOString().split('T')[0],
         timestamp: new Date().toISOString(),
         createdAt: Date.now(),
         name: editingEmp.name,
         operator: currentManager?.name || '管理員',
         operatorKey: currentManager?.key || 'admin',
-        operatorStoreId: editingEmp.storeId,
-        operatorStoreLabel: getStoreLabel(editingEmp.storeId),
-        actionType: 'edit_employee'
+        operatorStoreId: currentManager?.storeId || targetStoreId,
+        operatorStoreLabel: getStoreLabel(currentManager?.storeId || targetStoreId),
+        actionType: sourceStoreId !== targetStoreId ? 'move_employee_store' : 'edit_employee',
+        fromStoreId: sourceStoreId,
+        toStoreId: targetStoreId
       });
 
+      setSelectedEmpId(editingEmp.id);
       setEditingEmp(null);
       showMessage('夥伴資料已更新', 'success');
     } catch (error) {
@@ -1573,20 +1597,11 @@ const App = () => {
                         shop: getStoreLabel(e.target.value)
                       })
                     }
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold appearance-none"
-                    disabled={activeTab === 'manager'}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
                   >
-                    {activeTab === 'manager' ? (
-                      <option value={currentStoreId || ''}>
-                        {getStoreLabel(currentStoreId)}
-                      </option>
-                    ) : (
-                      <>
-                        <option value="">選擇店鋪</option>
-                        <option value="storeA">西螺文昌店</option>
-                        <option value="storeB">斗南站前店</option>
-                      </>
-                    )}
+                    <option value="">選擇店鋪</option>
+                    <option value="storeA">西螺文昌店</option>
+                    <option value="storeB">斗南站前店</option>
                   </select>
                 </div>
               </div>
@@ -2794,7 +2809,7 @@ const App = () => {
 
                     <button
                       onClick={() => {
-                        setEditingEmp({ ...selectedEmp });
+                        setEditingEmp({ ...selectedEmp, _originalStoreId: selectedEmp.storeId });
                         setIsAddingNew(false);
                       }}
                       className="py-4 rounded-2xl bg-white border border-gray-200 text-gray-700 font-black hover:border-orange-300 hover:text-orange-600 transition-colors flex items-center justify-center gap-2"
@@ -3149,6 +3164,7 @@ const App = () => {
                                 onClick={() =>
                                   setEditingEmp({
                                     ...emp,
+                                    _originalStoreId: emp.storeId,
                                     currentPoints: emp.assessment.thisYearPoints
                                   })
                                 }
