@@ -47,7 +47,7 @@ const App = () => {
   const PERFORMANCE_ITEMS = {
     penalty: [
       { label: '遲到 (預設1分/可修改)', val: -1 },
-      { label: '延遲開工 (15分以上)', val: -10 },
+      { label: '延遲開工 (遲到10分鐘以上)', val: -15 },
       { label: '工作態度不佳 (不服管教)', val: -5 },
       { label: '作業失誤-輕 (漏餐具等)', val: -2 },
       { label: '作業失誤-重 (燒焦/客訴)', val: -5 },
