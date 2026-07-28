@@ -122,8 +122,12 @@ const App = () => {
 
   const currentStoreId = currentManager?.storeId || null;
 
-  const normalizeBirthdayId = (value) => {
-    return String(value || '').replace(/\D/g, '').slice(0, 4);
+  const normalizeCheckinId = (value) => {
+    return String(value || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 12);
   };
 
   const showMessage = (text, type = 'info') => {
@@ -733,9 +737,9 @@ const App = () => {
       return;
     }
 
-    const birthdayId = normalizeBirthdayId(editingEmp?.birthdayId);
-    if (birthdayId && birthdayId.length !== 4) {
-      showMessage('生日月日請輸入 4 碼，例如 0512', 'error');
+    const birthdayId = normalizeCheckinId(editingEmp?.birthdayId);
+    if (birthdayId && !/^[A-Z0-9]{4,12}$/.test(birthdayId)) {
+      showMessage('打卡工號請輸入 4–12 碼英文字母或數字，例如 A0315', 'error');
       return;
     }
 
@@ -898,9 +902,9 @@ const App = () => {
       return;
     }
 
-    const birthdayId = normalizeBirthdayId(editingEmp?.birthdayId);
-    if (birthdayId && birthdayId.length !== 4) {
-      showMessage('生日月日請輸入 4 碼，例如 0512', 'error');
+    const birthdayId = normalizeCheckinId(editingEmp?.birthdayId);
+    if (birthdayId && !/^[A-Z0-9]{4,12}$/.test(birthdayId)) {
+      showMessage('打卡工號請輸入 4–12 碼英文字母或數字，例如 A0315', 'error');
       return;
     }
 
@@ -1563,24 +1567,24 @@ const App = () => {
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                    生日月日（打卡ID）
+                    打卡工號
                   </label>
                   <input
                     type="text"
-                    inputMode="numeric"
-                    maxLength={4}
+                    inputMode="text"
+                    maxLength={12}
                     value={editingEmp.birthdayId || ''}
                     onChange={(e) =>
                       setEditingEmp({
                         ...editingEmp,
-                        birthdayId: normalizeBirthdayId(e.target.value)
+                        birthdayId: normalizeCheckinId(e.target.value)
                       })
                     }
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
-                    placeholder="例如 0512"
+                    placeholder="例如 0512 或 A0315"
                   />
                   <p className="text-[10px] text-gray-400 font-bold ml-1">
-                    只存在員工資料，用來對應打卡系統，不會在列表顯示。
+                    可輸入 4–12 碼英文字母或數字，用來對應打卡系統，不會在列表顯示。
                   </p>
                 </div>
 
