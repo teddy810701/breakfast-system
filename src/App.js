@@ -31,7 +31,15 @@ import {
   Settings,
   CheckCircle2,
   Cloud,
-  Clock3
+  Clock3,
+  Trophy,
+  Timer,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  Crown,
+  Angry,
+  Star
 } from 'lucide-react';
 
 const App = () => {
@@ -69,6 +77,11 @@ const App = () => {
 
   const [activeTab, setActiveTab] = useState('employee');
   const [selectedEmpId, setSelectedEmpId] = useState(null);
+  const [showEmployeeStats, setShowEmployeeStats] = useState(false);
+  const [openEmployeeStoreId, setOpenEmployeeStoreId] = useState(null);
+  const [showPenaltyLeaderDetails, setShowPenaltyLeaderDetails] = useState(false);
+  const [showLateLeaderDetails, setShowLateLeaderDetails] = useState(false);
+  const [showBonusLeaderDetails, setShowBonusLeaderDetails] = useState(false);
 
   const [authMode, setAuthMode] = useState(null);
   const [passwordInput, setPasswordInput] = useState('');
@@ -297,6 +310,30 @@ const App = () => {
       text: `${Math.max(0, years)}年${Math.max(0, months)}個月`
     };
   };
+
+  const resizeEmployeePhoto = (file) =>
+    new Promise((resolve, reject) => {
+      if (!file?.type?.startsWith('image/')) {
+        reject(new Error('請選擇圖片檔案'));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('照片讀取失敗'));
+      reader.onload = () => {
+        const image = new Image();
+        image.onerror = () => reject(new Error('照片格式無法使用'));
+        image.onload = () => {
+          const size = Math.min(image.width, image.height);
+          const canvas = document.createElement('canvas');
+          canvas.width = 320;
+          canvas.height = 320;
+          canvas.getContext('2d').drawImage(image, (image.width - size) / 2, (image.height - size) / 2, size, size, 0, 0, 320, 320);
+          resolve(canvas.toDataURL('image/jpeg', 0.78));
+        };
+        image.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
 
   const getEmployeeYearLogs = useCallback(
     (empId, year) => {
@@ -1073,6 +1110,15 @@ const App = () => {
     });
   }, [visibleEmployees, getEmployeeYearPoints]);
 
+  const employeeDirectoryByStore = useMemo(() => {
+    const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hant');
+    return Object.keys(STORE_CONFIG).map((storeId) => ({
+      storeId,
+      label: getStoreLabel(storeId),
+      employees: employees.filter((emp) => emp.storeId === storeId).sort(byName)
+    }));
+  }, [employees, getStoreLabel]);
+
   const getEmployeeMonthLogs = (empId, monthKey = getCurrentMonthKey()) => {
     return sortLogsByNewestFirst(
       logs.filter((log) => {
@@ -1128,6 +1174,53 @@ const App = () => {
       totalPenaltyCount
     };
   };
+
+  const getMonthlyLeaderboard = () => {
+    const rows = employees.map((emp) => {
+      const monthLogs = getEmployeeMonthLogs(emp.id);
+      const penaltyLogs = monthLogs.filter((log) => Number(log.amount) < 0);
+      const lateLogs = monthLogs.filter(isLateLog);
+      const fiveStarLogs = monthLogs.filter((log) => String(log.reason || '').includes('五星評論'));
+      const bonusLogs = monthLogs.filter((log) => Number(log.amount) > 0);
+      return {
+        emp,
+        employmentType: getEmployeeEmploymentType(emp),
+        yearPoints: getEmployeeYearPoints(emp, getCurrentYear()),
+        lateCount: lateLogs.length,
+        lateLogs,
+        fiveStarCount: fiveStarLogs.length,
+        bonusLogs,
+        bonusPoints: bonusLogs.reduce((sum, log) => sum + Number(log.amount), 0),
+        penaltyLogs,
+        penaltyPoints: penaltyLogs.reduce((sum, log) => sum + Math.abs(Number(log.amount) || 0), 0)
+      };
+    });
+
+    const tiedWinners = (candidates, valueKey) => {
+      if (!candidates.length) return [];
+      const highest = Math.max(...candidates.map((row) => Number(row[valueKey]) || 0));
+      return candidates.filter((row) => (Number(row[valueKey]) || 0) === highest);
+    };
+    const fullTimePointsWinners = tiedWinners(rows.filter((row) => row.employmentType === 'fulltime'), 'yearPoints');
+    const partTimePointsWinners = tiedWinners(rows.filter((row) => row.employmentType === 'pt'), 'yearPoints');
+    const lateWinners = tiedWinners(rows.filter((row) => row.lateCount > 0), 'lateCount');
+    const bonusWinners = tiedWinners(rows.filter((row) => row.bonusPoints > 0), 'bonusPoints');
+    const penaltyWinners = tiedWinners(rows.filter((row) => row.penaltyPoints > 0), 'penaltyPoints');
+    const fiveStarWinners = tiedWinners(rows.filter((row) => row.fiveStarCount > 0), 'fiveStarCount');
+    return { fullTimePointsWinners, partTimePointsWinners, lateWinners, bonusWinners, penaltyWinners, fiveStarWinners };
+  };
+
+  const formatLeaderboardNames = (winners) => {
+    if (!winners?.length) return '';
+    const names = winners.map((winner) => winner.emp.name);
+    if (names.length <= 3) return names.join('、');
+    return `${names.slice(0, 2).join('、')}等 ${names.length} 人並列`;
+  };
+
+  function getEmployeeEmploymentType(emp) {
+    if (emp?.employmentType === 'fulltime' || emp?.employmentType === 'pt') return emp.employmentType;
+    return 'unset';
+  }
 
   const getEmployeeWarnings = (emp) => {
     if (!emp) return [];
@@ -1624,7 +1717,54 @@ const App = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">員工大頭照</label>
+                <div className="flex items-center gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                  {editingEmp.photoDataUrl ? (
+                    <img src={editingEmp.photoDataUrl} alt="大頭照預覽" className="w-16 h-16 rounded-2xl object-cover border-2 border-white shadow-sm" />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center text-2xl font-black">{String(editingEmp.name || '員').slice(0, 1)}</div>
+                  )}
+                  <div className="flex-1 space-y-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="block w-full text-xs font-bold text-gray-500 file:mr-3 file:rounded-xl file:border-0 file:bg-orange-600 file:px-3 file:py-2 file:font-black file:text-white"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const photoDataUrl = await resizeEmployeePhoto(file);
+                          setEditingEmp((current) => ({ ...current, photoDataUrl }));
+                        } catch (error) {
+                          showMessage(error.message || '照片處理失敗', 'error');
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                    {editingEmp.photoDataUrl && (
+                      <button type="button" onClick={() => setEditingEmp({ ...editingEmp, photoDataUrl: '' })} className="text-xs font-black text-red-500">移除照片</button>
+                    )}
+                  </div>
+                </div>
+                <p className="text-[10px] text-gray-400 font-bold ml-1">照片會自動裁成正方形並縮小，方便平板快速載入。</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                    任用類別
+                  </label>
+                  <select
+                    value={editingEmp.employmentType || ''}
+                    onChange={(e) => setEditingEmp({ ...editingEmp, employmentType: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold appearance-none"
+                  >
+                    <option value="">尚未設定</option>
+                    <option value="fulltime">正職</option>
+                    <option value="pt">工讀（PT）</option>
+                  </select>
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
                     職級名稱
@@ -1658,6 +1798,26 @@ const App = () => {
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                  下一關目前完成進度（0–100%）
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={editingEmp.skillProgress || 0}
+                  onChange={(e) =>
+                    setEditingEmp({
+                      ...editingEmp,
+                      skillProgress: Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0))
+                    })
+                  }
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
+                />
+                <p className="text-[10px] text-gray-400 font-bold ml-1">例如已過 2 關、這裡填 70，就會顯示「第 3 關 70%」。</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -2004,164 +2164,390 @@ const App = () => {
                     員工查詢總覽
                   </h2>
                   <p className="text-xs text-gray-400 font-bold mt-1">
-                    查詢兩間店所有夥伴的年資、分數、年度結果與警示
+                    選擇分店裡自己的姓名，查看個人積分與紀錄
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                      全部人數
-                    </p>
-                    <p className="text-3xl font-black text-gray-800 mt-2">
-                      {totalEmployees}
-                    </p>
+                <div className={`grid gap-3 ${showEmployeeStats ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-[120px_auto] w-fit'}`}>
+                  <div className={`bg-gray-50 rounded-2xl border border-gray-100 ${showEmployeeStats ? 'p-5' : 'px-4 py-3'}`}>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">全部人數</p>
+                    <p className={`${showEmployeeStats ? 'text-3xl mt-2' : 'text-2xl mt-1'} font-black text-gray-800`}>{totalEmployees}</p>
                   </div>
-
+                  {!showEmployeeStats && (
+                    <button
+                      type="button"
+                      onClick={() => setShowEmployeeStats(true)}
+                      className="self-stretch px-3 py-2 rounded-2xl bg-orange-50 border border-orange-100 text-orange-600 font-black text-xs flex items-center justify-center gap-1.5 hover:bg-orange-100 transition whitespace-nowrap"
+                    >
+                      查看其他統計
+                      <ChevronDown size={18} />
+                    </button>
+                  )}
+                  {showEmployeeStats && (
+                    <>
                   <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                      全部警示人數
-                    </p>
-                    <p className="text-3xl font-black text-orange-600 mt-2">
-                      {warningCount}
-                    </p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">全部警示人數</p>
+                    <p className="text-3xl font-black text-orange-600 mt-2">{warningCount}</p>
                   </div>
-
                   <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                      本月警示人數
-                    </p>
-                    <p className="text-3xl font-black text-red-600 mt-2">
-                      {monthlyWarningCount}
-                    </p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">本月警示人數</p>
+                    <p className="text-3xl font-black text-red-600 mt-2">{monthlyWarningCount}</p>
                   </div>
-
                   <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">
-                      年度基準
-                    </p>
-                    <p className="text-3xl font-black text-gray-800 mt-2">
-                      {DEFAULT_INITIAL_POINTS}
-                    </p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">年度基準</p>
+                    <p className="text-3xl font-black text-gray-800 mt-2">{DEFAULT_INITIAL_POINTS}</p>
                   </div>
+                    </>
+                  )}
+                  {showEmployeeStats && (
+                    <button
+                      type="button"
+                      onClick={() => setShowEmployeeStats(false)}
+                      className="col-span-2 md:col-span-4 justify-self-end px-3 py-2 rounded-xl text-xs font-black text-gray-400 hover:text-orange-600 flex items-center gap-1"
+                    >
+                      收起其他統計
+                      <ChevronUp size={16} />
+                    </button>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {sortedEmployees.map((emp) => {
-                  const assessment = getEmployeeAssessment(emp);
-                  const warnings = getEmployeeWarnings(emp);
+              {(() => {
+                const { fullTimePointsWinners, partTimePointsWinners, lateWinners, bonusWinners, penaltyWinners, fiveStarWinners } = getMonthlyLeaderboard();
+                const lateWinner = lateWinners[0];
+                const bonusWinner = bonusWinners[0];
+                const penaltyWinner = penaltyWinners[0];
+                const fiveStarWinner = fiveStarWinners[0];
+                const leaderboardCards = [
+                  {
+                    key: 'fulltime-points',
+                    title: '正職積分王',
+                    subtitle: '今年總積分最高',
+                    name: formatLeaderboardNames(fullTimePointsWinners) || '尚未設定正職',
+                    value: fullTimePointsWinners.length ? `${fullTimePointsWinners[0].yearPoints} 分` : '—',
+                    icon: <Trophy size={22} />,
+                    color: 'from-amber-400 to-orange-500'
+                  },
+                  {
+                    key: 'pt-points',
+                    title: '工讀積分王',
+                    subtitle: '今年總積分最高',
+                    name: formatLeaderboardNames(partTimePointsWinners) || '尚未設定工讀生',
+                    value: partTimePointsWinners.length ? `${partTimePointsWinners[0].yearPoints} 分` : '—',
+                    icon: <Trophy size={22} />,
+                    color: 'from-emerald-400 to-teal-500'
+                  },
+                  {
+                    key: 'late',
+                    title: '本月遲到提醒',
+                    subtitle: '本月遲到次數',
+                    name: lateWinner ? '猜猜是誰？' : '本月全員準時',
+                    value: lateWinner ? `${lateWinner.lateCount} 次` : '🎉',
+                    icon: <Timer size={22} />,
+                    color: 'from-rose-400 to-red-500',
+                    onClick: lateWinner ? () => setShowLateLeaderDetails(true) : null
+                  },
+                  {
+                    key: 'bonus',
+                    title: '加分王',
+                    subtitle: '本月獲得加分最多',
+                    name: formatLeaderboardNames(bonusWinners) || '本月尚無加分',
+                    value: bonusWinner ? `+${bonusWinner.bonusPoints} 分` : '—',
+                    icon: <Sparkles size={22} />,
+                    color: 'from-blue-400 to-indigo-500',
+                    onClick: bonusWinner ? () => setShowBonusLeaderDetails(true) : null
+                  },
+                  {
+                    key: 'penalty',
+                    title: '本月扣分最多',
+                    subtitle: '姓名與扣分項目已隱藏',
+                    name: penaltyWinner ? '猜猜是誰？' : '本月無扣分',
+                    value: penaltyWinner ? `-${penaltyWinner.penaltyPoints} 分` : '—',
+                    icon: <Angry size={24} />,
+                    color: 'from-red-500 to-orange-500',
+                    onClick: penaltyWinner ? () => setShowPenaltyLeaderDetails(true) : null
+                  },
+                  {
+                    key: 'five-star',
+                    title: '五星評論王',
+                    subtitle: '本月獲得顧客五星評論',
+                    name: formatLeaderboardNames(fiveStarWinners) || '本月尚無五星評論',
+                    value: fiveStarWinner ? `${fiveStarWinner.fiveStarCount} 次` : '—',
+                    icon: <Star size={24} className="fill-white/30" />,
+                    color: 'from-yellow-400 to-amber-500'
+                  }
+                ];
 
-                  return (
-                    <div
-                      key={emp.id}
-                      className={`p-5 rounded-3xl border transition-all ${
-                        warnings.some((w) => w.level === 'danger')
-                          ? 'border-red-200 bg-red-50/40'
-                          : warnings.length > 0
-                          ? 'border-yellow-200 bg-yellow-50/40'
-                          : 'border-gray-100 bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-5">
-                        <div className="flex-1">
-                          <div className="flex items-center flex-wrap gap-2 mb-3">
-                            <h3 className="text-xl font-black text-gray-800">
-                              {emp.name}
-                            </h3>
+                return (
+                  <div className="mb-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                        <Crown size={22} className="text-amber-500 fill-amber-100" />
+                        本月排行榜
+                      </h3>
+                      <span className="text-xs font-bold text-gray-400">每月自動重新計算</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {leaderboardCards.map((card) => (
+                        <button
+                          key={card.key}
+                          type="button"
+                          onClick={card.onClick || undefined}
+                          disabled={!card.onClick}
+                          className={`rounded-3xl border border-gray-100 bg-gray-50 p-4 flex items-center gap-4 text-left ${card.onClick ? 'hover:border-red-200 hover:bg-white cursor-pointer transition' : ''}`}
+                        >
+                          <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${card.color} text-white flex items-center justify-center shadow-sm shrink-0`}>{card.icon}</div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-black text-gray-400">{card.title} · {card.subtitle}</p>
+                            <p className="text-lg font-black text-gray-800 truncate mt-1">{card.name}</p>
+                          </div>
+                          <span className="text-sm font-black text-orange-600 whitespace-nowrap">{card.value}</span>
+                        </button>
+                      ))}
+                    </div>
 
-                            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-400">
-                              {emp.shop || '未設定店鋪'}
-                            </span>
-
-                            <span
-                              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${assessment.result.bg}`}
-                            >
-                              {assessment.result.status}
-                            </span>
-
-                            {warnings.slice(0, 4).map((warning) => (
-                              <span
-                                key={warning.key}
-                                className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${getWarningBadgeClass(
-                                  warning.level
-                                )}`}
-                              >
-                                {warning.label}
-                              </span>
+                    {showBonusLeaderDetails && bonusWinner && (
+                      <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="w-full max-w-lg rounded-[2rem] bg-white shadow-2xl overflow-hidden">
+                          <div className="p-6 bg-blue-50 border-b border-blue-100 flex items-start justify-between gap-4">
+                            <div>
+                              <p className="text-xs font-black text-blue-500">本月加分王</p>
+                              <h3 className="text-2xl font-black text-gray-800 mt-1">{formatLeaderboardNames(bonusWinners)}</h3>
+                              <p className="text-sm font-black text-blue-600 mt-2">{bonusWinners.length > 1 ? `${bonusWinners.length} 人並列，` : ''}各加 {bonusWinner.bonusPoints} 分</p>
+                            </div>
+                            <button type="button" onClick={() => setShowBonusLeaderDetails(false)} className="w-10 h-10 rounded-full bg-white text-gray-400 flex items-center justify-center border border-gray-100 shrink-0">
+                              <X size={20} />
+                            </button>
+                          </div>
+                          <div className="p-6 max-h-[60vh] overflow-y-auto space-y-5">
+                            {bonusWinners.map((winner) => (
+                              <div key={`bonus-winner-${winner.emp.id}`} className="rounded-3xl border border-blue-100 overflow-hidden">
+                                <div className="p-4 bg-blue-50/60 flex items-center gap-3">
+                                  {winner.emp.photoDataUrl ? (
+                                    <img src={winner.emp.photoDataUrl} alt={`${winner.emp.name}的大頭照`} className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-sm" />
+                                  ) : (
+                                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 text-white flex items-center justify-center text-xl font-black">{String(winner.emp.name || '員').slice(0, 1)}</div>
+                                  )}
+                                  <div>
+                                    <p className="text-lg font-black text-gray-800">{winner.emp.name}</p>
+                                    <p className="text-xs font-black text-blue-600">本月共 +{winner.bonusPoints} 分</p>
+                                  </div>
+                                </div>
+                                <div className="p-3 space-y-2">
+                                  {winner.bonusLogs.map((log) => (
+                                    <div key={log.id} className="rounded-2xl bg-gray-50 p-3 flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="font-black text-gray-700">{log.reason || '加分紀錄'}</p>
+                                        {log.note && <p className="text-xs text-gray-400 font-bold mt-1">{log.note}</p>}
+                                      </div>
+                                      <span className="font-black text-blue-600 whitespace-nowrap">+{Number(log.amount) || 0} 分</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
                             ))}
                           </div>
+                        </div>
+                      </div>
+                    )}
 
-                          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                今年分數
-                              </p>
-                              <p className="text-2xl font-black mt-2 text-gray-800">
-                                {assessment.thisYearPoints}
-                              </p>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                年度結果
-                              </p>
-                              <div className="mt-2">
-                                <span
-                                  className={`px-3 py-1 rounded-2xl text-xs font-black ${assessment.result.bg}`}
-                                >
-                                  {assessment.result.status}
-                                </span>
+                    {showLateLeaderDetails && lateWinner && (
+                      <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="w-full max-w-md rounded-[2rem] bg-white shadow-2xl overflow-hidden">
+                          <div className="p-6 bg-rose-50 border-b border-rose-100 flex items-start justify-between gap-4">
+                            <div className="flex items-center gap-4 min-w-0">
+                              {lateWinner.emp.photoDataUrl ? (
+                                <img src={lateWinner.emp.photoDataUrl} alt={`${lateWinner.emp.name}的大頭照`} className="w-16 h-16 rounded-2xl object-cover border-2 border-white shadow-sm shrink-0" />
+                              ) : (
+                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-400 to-red-500 text-white flex items-center justify-center text-2xl font-black border-2 border-white shadow-sm shrink-0">
+                                  {String(lateWinner.emp.name || '員').slice(0, 1)}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-xs font-black text-rose-500">本月遲到提醒</p>
+                                <h3 className="text-2xl font-black text-gray-800 mt-1">{formatLeaderboardNames(lateWinners)}</h3>
+                                <p className="text-sm font-black text-red-600 mt-2">{lateWinners.length > 1 ? `${lateWinners.length} 人並列，` : ''}各遲到 {lateWinner.lateCount} 次</p>
                               </div>
                             </div>
-
-                            <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
-                              <p className="text-[10px] text-blue-500 font-black uppercase tracking-widest">
-                                當月積分
-                              </p>
-                              <p className="text-2xl font-black mt-2 text-blue-700">
-                                {getEmployeeMonthlyPoints(emp.id)}
-                              </p>
-                            </div>
-
-                            <div className="bg-orange-50 rounded-2xl p-4 border border-orange-100">
-                              <p className="text-[10px] text-orange-500 font-black uppercase tracking-widest">
-                                本月忘打卡
-                              </p>
-                              <p className="text-2xl font-black mt-2 text-orange-600">
-                                {getEmployeeMonthlyMissedClockCount(emp.id)}
-                              </p>
-                            </div>
-
-                            <div className="bg-white rounded-2xl p-4 border border-gray-100">
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                                目前警示
-                              </p>
-                              <p className="text-sm font-black mt-2 text-gray-700">
-                                {warnings.length > 0 ? `${warnings.length} 項` : '無'}
-                              </p>
-                            </div>
+                            <button type="button" onClick={() => setShowLateLeaderDetails(false)} className="w-10 h-10 rounded-full bg-white text-gray-400 flex items-center justify-center border border-gray-100 shrink-0">
+                              <X size={20} />
+                            </button>
+                          </div>
+                          <div className="p-6 max-h-[55vh] overflow-y-auto space-y-3">
+                            {lateWinners.map((winner) => (
+                              <div key={`late-winner-${winner.emp.id}`} className="rounded-2xl border border-rose-100 overflow-hidden">
+                                <p className="px-4 py-2 bg-rose-50 font-black text-gray-800">{winner.emp.name}</p>
+                                <div className="p-3 space-y-2">
+                                  {winner.lateLogs.map((log) => (
+                                    <div key={log.id} className="rounded-xl bg-gray-50 p-3 flex items-start justify-between gap-4">
+                                      <div>
+                                        <p className="font-black text-gray-700">{log.reason || '遲到紀錄'}</p>
+                                        {log.note && <p className="text-xs text-gray-400 font-bold mt-1">{log.note}</p>}
+                                      </div>
+                                      <span className="font-black text-red-600 whitespace-nowrap">{Number(log.amount) || 0} 分</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
+                      </div>
+                    )}
 
-                        <div className="xl:w-[140px]">
+                    {showPenaltyLeaderDetails && (
+                      <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="w-full max-w-md rounded-[2rem] bg-white shadow-2xl overflow-hidden">
+                          <div className="p-6 bg-red-50 border-b border-red-100 flex items-start justify-between gap-4">
+                            <div className="flex items-center gap-4 min-w-0">
+                              {penaltyWinner && (
+                                penaltyWinner.emp.photoDataUrl ? (
+                                  <img src={penaltyWinner.emp.photoDataUrl} alt={`${penaltyWinner.emp.name}的大頭照`} className="w-16 h-16 rounded-2xl object-cover border-2 border-white shadow-sm shrink-0" />
+                                ) : (
+                                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-400 to-orange-400 text-white flex items-center justify-center text-2xl font-black border-2 border-white shadow-sm shrink-0">
+                                    {String(penaltyWinner.emp.name || '員').slice(0, 1)}
+                                  </div>
+                                )
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-xs font-black text-red-500">本月被扣分最多</p>
+                                <h3 className="text-2xl font-black text-gray-800 mt-1">{formatLeaderboardNames(penaltyWinners) || '本月無扣分紀錄'}</h3>
+                                {penaltyWinner && <p className="text-sm font-black text-red-600 mt-2">{penaltyWinners.length > 1 ? `${penaltyWinners.length} 人並列，` : ''}各扣 {penaltyWinner.penaltyPoints} 分</p>}
+                              </div>
+                            </div>
+                            <button type="button" onClick={() => setShowPenaltyLeaderDetails(false)} className="w-10 h-10 rounded-full bg-white text-gray-400 flex items-center justify-center border border-gray-100">
+                              <X size={20} />
+                            </button>
+                          </div>
+                          <div className="p-6 max-h-[55vh] overflow-y-auto space-y-3">
+                            {penaltyWinner ? penaltyWinners.map((winner) => (
+                              <div key={`penalty-winner-${winner.emp.id}`} className="rounded-2xl border border-red-100 overflow-hidden">
+                                <p className="px-4 py-2 bg-red-50 font-black text-gray-800">{winner.emp.name}</p>
+                                <div className="p-3 space-y-2">
+                                  {winner.penaltyLogs.map((log) => (
+                                    <div key={log.id} className="rounded-xl bg-gray-50 p-3 flex items-start justify-between gap-4">
+                                      <div>
+                                        <p className="font-black text-gray-700">{log.reason || '未填寫扣分項目'}</p>
+                                        {log.note && <p className="text-xs text-gray-400 font-bold mt-1">{log.note}</p>}
+                                      </div>
+                                      <span className="font-black text-red-600 whitespace-nowrap">{Number(log.amount) || 0} 分</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )) : (
+                              <p className="text-center text-gray-400 font-bold py-6">本月大家都沒有扣分紀錄</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-8">
+                <div className="grid grid-cols-2 gap-3">
+                  {employeeDirectoryByStore.map((store) => {
+                    const isOpen = openEmployeeStoreId === store.storeId;
+                    return (
+                      <button
+                        key={`store-toggle-${store.storeId}`}
+                        type="button"
+                        onClick={() => setOpenEmployeeStoreId(isOpen ? null : store.storeId)}
+                        className={`p-4 rounded-3xl border flex items-center justify-between gap-3 text-left transition-all ${
+                          isOpen
+                            ? 'border-orange-300 bg-orange-50 text-orange-700 shadow-sm'
+                            : 'border-gray-100 bg-gray-50 text-gray-700 hover:border-orange-200'
+                        }`}
+                      >
+                        <span className="flex items-center gap-3 min-w-0">
+                          <Store size={20} className="text-orange-600 shrink-0" />
+                          <span>
+                            <span className="block text-base font-black truncate">{store.label}</span>
+                            <span className="block text-xs font-bold text-gray-400 mt-1">{store.employees.length} 位夥伴</span>
+                          </span>
+                        </span>
+                        {isOpen ? <ChevronUp size={19} /> : <ChevronDown size={19} />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {employeeDirectoryByStore.filter((store) => store.storeId === openEmployeeStoreId).map((store) => (
+                  <div key={store.storeId}>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                        <Store size={19} className="text-orange-600" />
+                        {store.label}
+                      </h3>
+                      <span className="text-xs font-black text-gray-400">{store.employees.length} 位夥伴</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {store.employees.map((emp) => {
+                        const seniority = calculateSeniority(emp.startDate);
+                        const employmentType = getEmployeeEmploymentType(emp);
+                        const hasWarning = getEmployeeWarnings(emp).length > 0;
+                        const skillProgress = Number(emp.skillProgress) ||
+                          (window.location.hostname === '127.0.0.1' && Number(emp.skillsPassed) === 2 ? 70 : 0);
+                        return (
                           <button
+                            key={emp.id}
+                            type="button"
                             onClick={() => {
                               setSelectedEmpId(emp.id);
                               setSelectedMonth(new Date().toISOString().substring(0, 7));
                             }}
-                            className="w-full px-4 py-4 rounded-2xl bg-white border border-gray-200 text-gray-700 font-black hover:border-orange-300 hover:text-orange-600 transition-colors"
-                            type="button"
+                            className={`w-full flex items-center gap-4 p-4 rounded-3xl border text-left transition-all ${
+                              selectedEmpId === emp.id
+                                ? 'border-orange-400 bg-orange-50 shadow-lg shadow-orange-100'
+                                : 'border-gray-100 bg-gray-50 hover:border-orange-200 hover:bg-white'
+                            }`}
                           >
-                            {selectedEmpId === emp.id ? '查看中' : '查看詳情'}
+                            {emp.photoDataUrl ? (
+                              <img src={emp.photoDataUrl} alt={`${emp.name}的大頭照`} className="w-16 h-16 rounded-2xl object-cover border-2 border-white shadow-sm shrink-0" />
+                            ) : (
+                              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-400 to-amber-300 text-white flex items-center justify-center text-2xl font-black border-2 border-white shadow-sm shrink-0">
+                                {String(emp.name || '員').slice(0, 1)}
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black shrink-0 ${
+                                  employmentType === 'fulltime'
+                                    ? 'bg-violet-100 text-violet-700'
+                                    : employmentType === 'pt'
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-gray-200 text-gray-500'
+                                }`}>
+                                  {employmentType === 'fulltime' ? '正職' : employmentType === 'pt' ? '工讀' : '待設定'}
+                                </span>
+                                <p className={`text-lg font-black truncate ${hasWarning ? 'text-red-600' : 'text-gray-800'}`}>{emp.name}</p>
+                              </div>
+                              <div className="flex flex-wrap gap-2 mt-2 text-xs font-black">
+                                <span className="px-2.5 py-1 rounded-full bg-white border border-gray-100 text-gray-500">年資 {seniority.text}</span>
+                                <span className="px-2.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-600">
+                                  已過 {emp.skillsPassed || 0} 關{skillProgress > 0 ? ` · 第 ${(emp.skillsPassed || 0) + 1} 關 ${skillProgress}%` : ''}
+                                </span>
+                              </div>
+                              {skillProgress > 0 && (
+                                <div className="mt-2 h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                                  <div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.min(100, Math.max(0, skillProgress))}%` }} />
+                                </div>
+                              )}
+                            </div>
+                            <ArrowRight size={18} className="text-orange-400 shrink-0" />
                           </button>
-                        </div>
-                      </div>
+                        );
+                      })}
+                      {store.employees.length === 0 && (
+                        <div className="sm:col-span-2 lg:col-span-3 p-6 rounded-3xl border border-dashed border-gray-200 text-center text-gray-400 font-bold">此分店目前沒有員工</div>
+                      )}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
 
-                {sortedEmployees.length === 0 && (
+                {employees.length === 0 && (
                   <div className="p-8 rounded-3xl border border-dashed border-gray-200 text-center bg-gray-50 text-gray-400 font-bold">
                     目前尚無員工資料
                   </div>
