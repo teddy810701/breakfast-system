@@ -125,6 +125,7 @@ const App = () => {
   const [missedClockForm, setMissedClockForm] = useState({
     requestDate: new Date().toISOString().split('T')[0],
     requestTime: '',
+    missingType: '',
     reason: ''
   });
 
@@ -650,8 +651,8 @@ const App = () => {
       return;
     }
 
-    if (!missedClockForm.requestDate || !missedClockForm.requestTime || !missedClockForm.reason.trim()) {
-      showMessage('請完整填寫忘打卡日期、時間與原因', 'error');
+    if (!missedClockForm.requestDate || !missedClockForm.requestTime || !missedClockForm.missingType || !missedClockForm.reason.trim()) {
+      showMessage('請完整填寫忘打卡類型、日期、時間與原因', 'error');
       return;
     }
 
@@ -667,6 +668,7 @@ const App = () => {
         requestDate: missedClockForm.requestDate,
         requestTime: missedClockForm.requestTime,
         requestDateTime,
+        missingType: missedClockForm.missingType,
         timestamp: new Date().toISOString(),
         createdAt: Date.now(),
         name: selectedEmp.name,
@@ -681,6 +683,7 @@ const App = () => {
       setMissedClockForm({
         requestDate: new Date().toISOString().split('T')[0],
         requestTime: '',
+        missingType: '',
         reason: ''
       });
       showMessage('忘打卡申請已送出', 'success');
@@ -693,6 +696,12 @@ const App = () => {
   const handleMissedClockReview = async (log, nextStatus) => {
     if (!log?.id || !log?.storeId) {
       showMessage('找不到忘打卡申請資料', 'error');
+      return;
+    }
+
+    if (nextStatus === 'approved') {
+      window.open('https://work-checkin.vercel.app/', '_blank', 'noopener,noreferrer');
+      showMessage('請到打卡系統後台按「核准並補登」，完成後才會真正寫入打卡時間', 'info');
       return;
     }
 
@@ -2811,7 +2820,23 @@ const App = () => {
                     </span>
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div className="grid md:grid-cols-3 gap-4 mb-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">忘記哪一種打卡</label>
+                      <select
+                        value={missedClockForm.missingType}
+                        onChange={(e) =>
+                          setMissedClockForm((prev) => ({ ...prev, missingType: e.target.value }))
+                        }
+                        className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                      >
+                        <option value="">請選擇</option>
+                        <option value="上班">上班</option>
+                        <option value="休息開始">休息開始</option>
+                        <option value="休息結束">休息結束</option>
+                        <option value="下班">下班</option>
+                      </select>
+                    </div>
                     <div className="space-y-2">
                       <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">忘打卡日期</label>
                       <input
@@ -3594,7 +3619,7 @@ const App = () => {
                     忘打卡申請審核
                   </h3>
                   <p className="text-xs text-gray-400 font-bold mt-1">
-                    管理員可查看員工忘打卡日期時間、原因，並直接批准、退回或刪除申請
+                    管理員可查看申請；真正補登統一到打卡系統後台完成，避免只批准卻沒有寫入打卡時間
                   </p>
                 </div>
                 <span className="text-[10px] text-gray-300 font-black uppercase tracking-widest">
@@ -3633,7 +3658,7 @@ const App = () => {
                           className="py-3 rounded-2xl bg-green-600 text-white font-black hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
                         >
                           <CheckCircle2 size={18} />
-                          批准
+                          到打卡系統補登
                         </button>
                         <button
                           type="button"
