@@ -1618,11 +1618,11 @@ const App = () => {
       )}
 
       {editingEmp && (
-        <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-md overflow-y-auto">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg shadow-2xl">
-            <div className="p-8 border-b flex justify-between items-center bg-gray-50 rounded-t-[2.5rem]">
+        <div className="fixed inset-0 z-[700] flex items-start sm:items-center justify-center p-3 sm:p-4 bg-gray-900/60 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white rounded-[2rem] sm:rounded-[2.5rem] w-full max-w-lg shadow-2xl my-3 sm:my-auto">
+            <div className="p-5 sm:p-8 border-b flex justify-between items-center gap-3 bg-gray-50 rounded-t-[2rem] sm:rounded-t-[2.5rem]">
               <div>
-                <h3 className="text-2xl font-black">
+                <h3 className="text-xl sm:text-2xl font-black">
                   {isAddingNew ? '註冊新夥伴' : '編輯夥伴資料'}
                 </h3>
                 <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">
@@ -1641,8 +1641,8 @@ const App = () => {
               </button>
             </div>
 
-            <div className="p-8 space-y-5">
-              <div className="grid grid-cols-2 gap-4">
+            <div className="p-5 sm:p-8 space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
                     夥伴姓名
@@ -1723,13 +1723,13 @@ const App = () => {
 
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">員工大頭照</label>
-                <div className="flex items-center gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
                   {editingEmp.photoDataUrl ? (
                     <img src={editingEmp.photoDataUrl} alt="大頭照預覽" className="w-16 h-16 rounded-2xl object-cover border-2 border-white shadow-sm" />
                   ) : (
                     <div className="w-16 h-16 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center text-2xl font-black">{String(editingEmp.name || '員').slice(0, 1)}</div>
                   )}
-                  <div className="flex-1 space-y-2">
+                  <div className="w-full min-w-0 flex-1 space-y-2">
                     <input
                       type="file"
                       accept="image/*"
@@ -1824,7 +1824,7 @@ const App = () => {
                 <p className="text-[10px] text-gray-400 font-bold ml-1">例如已過 2 關、這裡填 70，就會顯示「第 3 關 70%」。</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
                     考核權重 (Multiplier)
@@ -1920,8 +1920,8 @@ const App = () => {
       )}
 
       {showAdminSettings && activeTab === 'admin' && (
-        <div className="fixed inset-0 z-[780] flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-[2rem] w-full max-w-3xl shadow-2xl border border-gray-100">
+        <div className="fixed inset-0 z-[780] flex items-start sm:items-center justify-center p-3 sm:p-4 bg-gray-900/50 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-[2rem] w-full max-w-3xl shadow-2xl border border-gray-100 my-3 sm:my-auto">
             <div className="p-6 sm:p-8 border-b border-gray-100 flex items-center justify-between">
               <div>
                 <h3 className="text-2xl font-black text-gray-800 flex items-center gap-2">
@@ -2072,26 +2072,26 @@ const App = () => {
       )}
 
       <nav className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50 shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-orange-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-200">
+        <div className="max-w-5xl mx-auto px-3 sm:px-4 py-3 flex justify-between items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-orange-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-200 shrink-0">
               <ShieldCheck size={24} />
             </div>
-            <div>
-              <h1 className="text-lg font-black text-gray-800 leading-tight">
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-lg font-black text-gray-800 leading-tight whitespace-nowrap">
                 績效考核系統
               </h1>
-              <p className="text-[10px] text-orange-600 font-bold uppercase tracking-widest">
+              <p className="hidden sm:block text-[10px] text-orange-600 font-bold uppercase tracking-widest">
                 Performance Insight
               </p>
             </div>
           </div>
 
-          <div className="flex bg-gray-100 p-1 rounded-xl gap-1 border border-gray-200">
+          <div className="flex bg-gray-100 p-1 rounded-xl gap-0.5 sm:gap-1 border border-gray-200 shrink-0">
             <button
               onClick={() => window.open('https://yuchinyuxian.quickconnect.to/d/s/186Vedg15q40Guighjofsun0kdaXKNrV/VFvQfyzlaq7tHfK_BUVdvlop3-PSq2rC-ALkgpXiWKw0', '_blank', 'noopener,noreferrer')}
               title="前往公司雲端"
-              className="px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 text-gray-400 hover:text-blue-600 hover:bg-white"
+              className="px-2 sm:px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 text-gray-400 hover:text-blue-600 hover:bg-white"
               type="button"
             >
               <Cloud size={14} />
@@ -2101,7 +2101,7 @@ const App = () => {
             <button
               onClick={() => window.location.href = 'https://work-checkin.vercel.app/'}
               title="前往打卡系統"
-              className="px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 text-gray-400 hover:text-orange-600 hover:bg-white"
+              className="px-2 sm:px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 text-gray-400 hover:text-orange-600 hover:bg-white"
               type="button"
             >
               <Clock3 size={14} />
@@ -2110,7 +2110,7 @@ const App = () => {
 
             <button
               onClick={() => setActiveTab('employee')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 ${
+              className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 ${
                 activeTab === 'employee'
                   ? 'bg-white shadow-sm text-orange-600'
                   : 'text-gray-400 hover:text-gray-600'
@@ -2125,7 +2125,7 @@ const App = () => {
               onClick={() =>
                 activeTab === 'manager' ? leaveManagerMode() : setAuthMode('manager')
               }
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 ${
+              className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 ${
                 activeTab === 'manager'
                   ? 'bg-orange-600 text-white shadow-md'
                   : 'text-gray-400 hover:text-gray-600'
@@ -2144,7 +2144,7 @@ const App = () => {
                   ? setActiveTab('employee')
                   : setAuthMode('admin')
               }
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center justify-center ${
+              className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center justify-center ${
                 activeTab === 'admin'
                   ? 'bg-red-600 text-white shadow-md'
                   : 'text-gray-400 hover:text-red-600'
@@ -2298,12 +2298,12 @@ const App = () => {
                           type="button"
                           onClick={card.onClick || undefined}
                           disabled={!card.onClick}
-                          className={`rounded-3xl border border-gray-100 bg-gray-50 p-4 flex items-center gap-4 text-left ${card.onClick ? 'hover:border-red-200 hover:bg-white cursor-pointer transition' : ''}`}
+                          className={`rounded-3xl border border-gray-100 bg-gray-50 p-3 sm:p-4 grid grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3 sm:gap-4 text-left ${card.onClick ? 'hover:border-red-200 hover:bg-white cursor-pointer transition' : ''}`}
                         >
                           <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${card.color} text-white flex items-center justify-center shadow-sm shrink-0`}>{card.icon}</div>
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-black text-gray-400">{card.title} · {card.subtitle}</p>
-                            <p className="text-lg font-black text-gray-800 truncate mt-1">{card.name}</p>
+                            <p className="text-base sm:text-lg leading-snug font-black text-gray-800 break-words mt-1">{card.name}</p>
                           </div>
                           <span className="text-sm font-black text-orange-600 whitespace-nowrap">{card.value}</span>
                         </button>
@@ -2311,9 +2311,9 @@ const App = () => {
                     </div>
 
                     {showBonusLeaderDetails && bonusWinner && (
-                      <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="w-full max-w-lg rounded-[2rem] bg-white shadow-2xl overflow-hidden">
-                          <div className="p-6 bg-blue-50 border-b border-blue-100 flex items-start justify-between gap-4">
+                      <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                        <div className="w-full max-w-lg rounded-[2rem] bg-white shadow-2xl overflow-hidden my-3 sm:my-auto">
+                          <div className="p-4 sm:p-6 bg-blue-50 border-b border-blue-100 flex items-start justify-between gap-4">
                             <div>
                               <p className="text-xs font-black text-blue-500">本月加分王</p>
                               <h3 className="text-2xl font-black text-gray-800 mt-1">{formatLeaderboardNames(bonusWinners)}</h3>
@@ -2323,7 +2323,7 @@ const App = () => {
                               <X size={20} />
                             </button>
                           </div>
-                          <div className="p-6 max-h-[60vh] overflow-y-auto space-y-5">
+                          <div className="p-4 sm:p-6 max-h-[65vh] overflow-y-auto space-y-5">
                             {bonusWinners.map((winner) => (
                               <div key={`bonus-winner-${winner.emp.id}`} className="rounded-3xl border border-blue-100 overflow-hidden">
                                 <div className="p-4 bg-blue-50/60 flex items-center gap-3">
@@ -2356,9 +2356,9 @@ const App = () => {
                     )}
 
                     {showLateLeaderDetails && lateWinner && (
-                      <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="w-full max-w-md rounded-[2rem] bg-white shadow-2xl overflow-hidden">
-                          <div className="p-6 bg-rose-50 border-b border-rose-100 flex items-start justify-between gap-4">
+                      <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                        <div className="w-full max-w-md rounded-[2rem] bg-white shadow-2xl overflow-hidden my-3 sm:my-auto">
+                          <div className="p-4 sm:p-6 bg-rose-50 border-b border-rose-100 flex items-start justify-between gap-3 sm:gap-4">
                             <div className="flex items-center gap-4 min-w-0">
                               {lateWinner.emp.photoDataUrl ? (
                                 <img src={lateWinner.emp.photoDataUrl} alt={`${lateWinner.emp.name}的大頭照`} className="w-16 h-16 rounded-2xl object-cover border-2 border-white shadow-sm shrink-0" />
@@ -2377,7 +2377,7 @@ const App = () => {
                               <X size={20} />
                             </button>
                           </div>
-                          <div className="p-6 max-h-[55vh] overflow-y-auto space-y-3">
+                          <div className="p-4 sm:p-6 max-h-[65vh] overflow-y-auto space-y-3">
                             {lateWinners.map((winner) => (
                               <div key={`late-winner-${winner.emp.id}`} className="rounded-2xl border border-rose-100 overflow-hidden">
                                 <p className="px-4 py-2 bg-rose-50 font-black text-gray-800">{winner.emp.name}</p>
@@ -2400,9 +2400,9 @@ const App = () => {
                     )}
 
                     {showPenaltyLeaderDetails && (
-                      <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="w-full max-w-md rounded-[2rem] bg-white shadow-2xl overflow-hidden">
-                          <div className="p-6 bg-red-50 border-b border-red-100 flex items-start justify-between gap-4">
+                      <div className="fixed inset-0 z-50 bg-gray-900/50 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
+                        <div className="w-full max-w-md rounded-[2rem] bg-white shadow-2xl overflow-hidden my-3 sm:my-auto">
+                          <div className="p-4 sm:p-6 bg-red-50 border-b border-red-100 flex items-start justify-between gap-3 sm:gap-4">
                             <div className="flex items-center gap-4 min-w-0">
                               {penaltyWinner && (
                                 penaltyWinner.emp.photoDataUrl ? (
@@ -2423,7 +2423,7 @@ const App = () => {
                               <X size={20} />
                             </button>
                           </div>
-                          <div className="p-6 max-h-[55vh] overflow-y-auto space-y-3">
+                          <div className="p-4 sm:p-6 max-h-[65vh] overflow-y-auto space-y-3">
                             {penaltyWinner ? penaltyWinners.map((winner) => (
                               <div key={`penalty-winner-${winner.emp.id}`} className="rounded-2xl border border-red-100 overflow-hidden">
                                 <p className="px-4 py-2 bg-red-50 font-black text-gray-800">{winner.emp.name}</p>
