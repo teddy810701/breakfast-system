@@ -653,10 +653,10 @@ const App = () => {
     setActiveTab('employee');
   };
 
-  const requestAnnouncementManagerLogin = () => {
+  const requestAnnouncementAdminLogin = () => {
     setAnnouncementCreateRequested(true);
     setAuthDestination('announcements');
-    setAuthMode('manager');
+    setAuthMode('admin');
   };
 
   const handleMissedClockRequest = async () => {
@@ -2197,9 +2197,8 @@ const App = () => {
         {activeTab === 'announcements' && (
           <Announcements
             db={db}
-            currentManager={currentManager}
             isAdmin={isAdminAuthenticated}
-            onRequestManagerLogin={requestAnnouncementManagerLogin}
+            onRequestAdminLogin={requestAnnouncementAdminLogin}
             createRequested={announcementCreateRequested}
             onCreateRequestHandled={() => setAnnouncementCreateRequested(false)}
             showMessage={showMessage}
