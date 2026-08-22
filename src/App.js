@@ -12,6 +12,7 @@ import {
   setDoc
 } from 'firebase/firestore';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Announcements from './Announcements';
 import {
   Users,
   PlusCircle,
@@ -39,7 +40,8 @@ import {
   ChevronUp,
   Crown,
   Angry,
-  Star
+  Star,
+  Megaphone
 } from 'lucide-react';
 
 const App = () => {
@@ -87,6 +89,9 @@ const App = () => {
   const [passwordInput, setPasswordInput] = useState('');
   const [managerLoginKey, setManagerLoginKey] = useState('managerA');
   const [currentManager, setCurrentManager] = useState(null);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [authDestination, setAuthDestination] = useState(null);
+  const [announcementCreateRequested, setAnnouncementCreateRequested] = useState(false);
 
   const [selectedItemLabel, setSelectedItemLabel] = useState('');
   const [customPoints, setCustomPoints] = useState('0');
@@ -613,7 +618,9 @@ const App = () => {
     if (authMode === 'admin') {
       const adminPassword = String(config.adminPassword || '9999').trim();
       if (inputPassword === adminPassword) {
-        setActiveTab('admin');
+        setIsAdminAuthenticated(true);
+        setActiveTab(authDestination || 'admin');
+        setAuthDestination(null);
         setAuthMode(null);
       } else {
         showMessage('密碼錯誤，請確認 Firebase settings/auth 的 adminPassword', 'error');
@@ -630,7 +637,8 @@ const App = () => {
           storeId: data.storeId,
           key: managerLoginKey
         });
-        setActiveTab('manager');
+        setActiveTab(authDestination || 'manager');
+        setAuthDestination(null);
         setAuthMode(null);
       } else {
         showMessage('密碼錯誤，請確認 Firebase settings/auth 的店長密碼', 'error');
@@ -643,6 +651,12 @@ const App = () => {
   const leaveManagerMode = () => {
     setCurrentManager(null);
     setActiveTab('employee');
+  };
+
+  const requestAnnouncementManagerLogin = () => {
+    setAnnouncementCreateRequested(true);
+    setAuthDestination('announcements');
+    setAuthMode('manager');
   };
 
   const handleMissedClockRequest = async () => {
@@ -2098,6 +2112,19 @@ const App = () => {
 
           <div className="flex bg-gray-100 p-1 rounded-xl gap-0.5 sm:gap-1 border border-gray-200 shrink-0">
             <button
+              onClick={() => setActiveTab('announcements')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 ${
+                activeTab === 'announcements'
+                  ? 'bg-white shadow-sm text-orange-600'
+                  : 'text-gray-400 hover:text-orange-600'
+              }`}
+              type="button"
+            >
+              <Megaphone size={14} />
+              <span className="hidden sm:inline">公告</span>
+            </button>
+
+            <button
               onClick={() => window.open('https://yuchinyuxian.quickconnect.to/d/s/186Vedg15q40Guighjofsun0kdaXKNrV/VFvQfyzlaq7tHfK_BUVdvlop3-PSq2rC-ALkgpXiWKw0', '_blank', 'noopener,noreferrer')}
               title="前往公司雲端"
               className="px-2 sm:px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1 text-gray-400 hover:text-blue-600 hover:bg-white"
@@ -2150,7 +2177,7 @@ const App = () => {
             <button
               onClick={() =>
                 activeTab === 'admin'
-                  ? setActiveTab('employee')
+                  ? (setIsAdminAuthenticated(false), setActiveTab('employee'))
                   : setAuthMode('admin')
               }
               className={`px-2 sm:px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center justify-center ${
@@ -2167,6 +2194,17 @@ const App = () => {
       </nav>
 
       <main className="max-w-5xl mx-auto p-4 sm:p-6">
+        {activeTab === 'announcements' && (
+          <Announcements
+            db={db}
+            currentManager={currentManager}
+            isAdmin={isAdminAuthenticated}
+            onRequestManagerLogin={requestAnnouncementManagerLogin}
+            createRequested={announcementCreateRequested}
+            onCreateRequestHandled={() => setAnnouncementCreateRequested(false)}
+            showMessage={showMessage}
+          />
+        )}
         {activeTab === 'employee' && (
           <div className="space-y-6 animate-in slide-in-from-top-4 duration-300">
             <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">

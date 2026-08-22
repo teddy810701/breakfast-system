@@ -1,3 +1,42 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+  .form-label {
+    @apply block text-xs font-black text-slate-500;
+  }
+
+  .form-input {
+    @apply mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-700 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100;
+  }
+}
+
+.announcement-paper {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 16mm 17mm;
+}
+
+.signature-blank {
+  height: 58mm;
+}
+
+@media print {
+  @page { size: A4 portrait; margin: 0; }
+  body { background: white !important; }
+  body > * { visibility: hidden; }
+  .announcement-print-shell,
+  .announcement-print-shell * { visibility: visible; }
+  .announcement-print-shell { position: absolute; inset: 0; padding: 0 !important; background: white !important; }
+  .print-toolbar { display: none !important; }
+  .announcement-paper { box-shadow: none !important; margin: 0 !important; }
+}
+
+@media (max-width: 800px) {
+  .announcement-paper {
+    width: 100%;
+    min-height: auto;
+    padding: 24px;
+  }
+}
