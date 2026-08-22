@@ -31,10 +31,11 @@ const STORE_OPTIONS = [
   { value: 'storeA', label: '西螺文昌店' },
   { value: 'storeB', label: '斗南站前店' }
 ];
+const PUBLISHER_OPTIONS = ['麥味登西螺文昌店', '麥味登斗南站前店'];
 const LEVELS = {
   urgent: { label: '重要', badge: 'bg-red-100 text-red-700', dot: 'bg-red-500' },
-  normal: { label: '一般', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
-  notice: { label: '通知', badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' }
+  normal: { label: '一般', badge: 'bg-orange-100 text-orange-700', dot: 'bg-[#e88024]' },
+  notice: { label: '通知', badge: 'bg-emerald-100 text-emerald-800', dot: 'bg-[#2f8a5b]' }
 };
 
 const PRINT_SAMPLE = {
@@ -43,7 +44,7 @@ const PRINT_SAMPLE = {
   effectiveDate: '2026-08-22',
   storeId: 'all',
   category: '工作規範',
-  publisher: '系統管理員',
+  publisher: PUBLISHER_OPTIONS[0],
   priority: 'urgent',
   title: '報廢商品處理規範',
   content: '為確保商品品質及門市紀錄完整，自即日起請依下列方式處理：\n\n1. 任何製作錯誤或品質異常商品，不得自行丟棄。\n2. 應先向當班主管回報，說明品項與原因。\n3. 經主管確認後，才能依規定進行報廢。\n4. 如涉及食品安全問題，應立即停止出餐並通知主管。',
@@ -59,6 +60,7 @@ const emptyForm = () => ({
   title: '',
   category: '工作規範',
   storeId: 'all',
+  publisher: PUBLISHER_OPTIONS[0],
   content: '',
   announcementDate: today(),
   effectiveDate: today(),
@@ -136,7 +138,7 @@ function AnnouncementPrint({ item, onBack }) {
           <div className="border-b border-slate-200 p-3"><dt className="font-black text-slate-400">生效日期</dt><dd className="mt-1 font-black text-slate-800">{dateLabel(item.effectiveDate)}</dd></div>
           <div className="border-r border-slate-200 p-3"><dt className="font-black text-slate-400">適用門市</dt><dd className="mt-1 font-black text-slate-800">{storeLabel(item.storeId)}</dd></div>
           <div className="border-r border-slate-200 p-3"><dt className="font-black text-slate-400">公告分類</dt><dd className="mt-1 font-black text-slate-800">{item.category}</dd></div>
-          <div className="p-3"><dt className="font-black text-slate-400">發布人</dt><dd className="mt-1 font-black text-slate-800">{item.publisher || '管理員'}</dd></div>
+          <div className="p-3"><dt className="font-black text-slate-400">發布單位</dt><dd className="mt-1 font-black text-slate-800">{item.publisher || PUBLISHER_OPTIONS[0]}</dd></div>
         </dl>
 
         <section className="mt-7">
@@ -176,7 +178,7 @@ function AnnouncementPrint({ item, onBack }) {
   );
 }
 
-export default function Announcements({ db, currentManager, isAdmin, onRequestManagerLogin, createRequested, onCreateRequestHandled, showMessage }) {
+export default function Announcements({ db, isAdmin, onRequestAdminLogin, createRequested, onCreateRequestHandled, showMessage }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -192,8 +194,8 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
   const [showArchived, setShowArchived] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
 
-  const canManage = Boolean(currentManager || isAdmin);
-  const publisher = currentManager?.name || (isAdmin ? '系統管理員' : '');
+  const canManage = Boolean(isAdmin);
+  const editorName = isAdmin ? '系統管理員' : '';
 
   useEffect(() => {
     if (!canManage || !createRequested) return;
@@ -274,7 +276,7 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
 
   const openCreate = () => {
     if (!canManage) {
-      onRequestManagerLogin();
+      onRequestAdminLogin();
       return;
     }
     setEditing(null);
@@ -286,7 +288,7 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
     setForm({
       title: item.title || '', category: item.category || '其他', storeId: item.storeId || 'all',
       content: item.content || '', announcementDate: item.announcementDate || today(), effectiveDate: item.effectiveDate || today(),
-      requiresSignature: Boolean(item.requiresSignature), priority: item.priority || 'normal', pinned: Boolean(item.pinned),
+      requiresSignature: Boolean(item.requiresSignature), priority: item.priority || 'normal', pinned: Boolean(item.pinned), publisher: item.publisher || PUBLISHER_OPTIONS[0],
       attachmentName: item.attachmentName || '', attachmentUrl: item.attachmentUrl || '', imageData: item.imageData || ''
     });
   };
@@ -316,12 +318,12 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
     try {
       const now = new Date().toISOString();
       if (editing) {
-        const history = [...(editing.versions || []), snapshotVersion(editing, publisher, '修改前版本')];
+        const history = [...(editing.versions || []), snapshotVersion(editing, editorName, '修改前版本')];
         const { isNew, ...announcementFields } = form;
         await updateDoc(doc(db, 'stores', 'shared', 'announcements', editing.id), {
           ...announcementFields,
           title: form.title.trim(), content: form.content.trim(), attachmentUrl: form.attachmentUrl.trim(), attachmentName: form.attachmentName.trim(),
-          version: (editing.version || 1) + 1, versions: history, updatedAt: now, updatedBy: publisher
+          version: (editing.version || 1) + 1, versions: history, updatedAt: now, updatedBy: editorName
         });
         showMessage('公告已更新並保留舊版本', 'success');
       } else {
@@ -337,7 +339,7 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
         const { isNew, ...announcementFields } = form;
         await addDoc(collection(db, 'stores', 'shared', 'announcements'), {
           ...announcementFields, title: form.title.trim(), content: form.content.trim(), attachmentUrl: form.attachmentUrl.trim(), attachmentName: form.attachmentName.trim(),
-          number, version: 1, versions: [], status: 'published', publisher, publishedAt: now, updatedAt: now
+          number, version: 1, versions: [], status: 'published', publisher: form.publisher, publishedAt: now, updatedAt: now
         });
         showMessage(`公告 ${number} 已發布`, 'success');
       }
@@ -354,8 +356,8 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
     if (!window.confirm(`確定作廢「${item.title}」？舊資料與版本仍會保留。`)) return;
     try {
       await updateDoc(doc(db, 'stores', 'shared', 'announcements', item.id), {
-        status: 'archived', pinned: false, archivedAt: new Date().toISOString(), archivedBy: publisher,
-        versions: [...(item.versions || []), snapshotVersion(item, publisher, '作廢前版本')]
+        status: 'archived', pinned: false, archivedAt: new Date().toISOString(), archivedBy: editorName,
+        versions: [...(item.versions || []), snapshotVersion(item, editorName, '作廢前版本')]
       });
       setSelected(null);
       showMessage('公告已作廢並保留紀錄', 'success');
@@ -369,47 +371,47 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
 
   return (
     <div className="space-y-5 animate-in slide-in-from-top-4 duration-300">
-      <section className="overflow-hidden rounded-[2rem] bg-slate-900 p-6 text-white shadow-xl sm:p-8">
+      <section className="overflow-hidden rounded-[2rem] border border-[#cfe1d5] border-b-8 border-b-[#e88024] bg-[#edf6ef] p-6 text-[#174d37] shadow-lg sm:p-8">
         <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
           <div>
-            <p className="text-xs font-black tracking-[0.22em] text-orange-300">MORNING NOTICE BOARD</p>
+            <p className="text-xs font-black tracking-[0.22em] text-[#d96710]">MORNING NOTICE BOARD</p>
             <h2 className="mt-2 text-3xl font-black">公告管理</h2>
-            <p className="mt-2 max-w-xl text-sm font-bold leading-6 text-slate-300">發布店內規範、快速搜尋歷史公告，並列印正式 A4 簽收單。</p>
+            <p className="mt-2 max-w-xl text-sm font-bold leading-6 text-[#64806f]">發布店內規範、快速搜尋歷史公告，並列印正式 A4 簽收單。</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button type="button" onClick={() => setPrinting(PRINT_SAMPLE)} className="flex items-center justify-center gap-2 rounded-2xl border border-slate-600 bg-slate-800 px-5 py-3 font-black text-white hover:bg-slate-700">
+            <button type="button" onClick={() => setPrinting(PRINT_SAMPLE)} className="flex items-center justify-center gap-2 rounded-2xl border border-[#9fc5ad] bg-white px-5 py-3 font-black text-[#0b5637] hover:bg-[#f7fbf8]">
               <Printer size={19} /> A4 列印預覽
             </button>
-            <button type="button" onClick={openCreate} className="flex items-center justify-center gap-2 rounded-2xl bg-orange-500 px-5 py-3 font-black text-white shadow-lg shadow-orange-950/30 hover:bg-orange-400">
-              <Plus size={19} /> {canManage ? '新增公告' : '登入後新增'}
+            <button type="button" onClick={openCreate} className="flex items-center justify-center gap-2 rounded-2xl bg-[#e88024] px-5 py-3 font-black text-white shadow-lg shadow-[#063b27]/40 hover:bg-[#f09545]">
+              <Plus size={19} /> {canManage ? '新增公告' : '管理員登入後新增'}
             </button>
           </div>
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <section className="rounded-3xl border border-[#e7dcc3] bg-[#fffdf7] p-4 shadow-sm sm:p-5">
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          <label className="relative md:col-span-2"><Search className="absolute left-3 top-3 text-slate-400" size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜尋標題、內容、編號或發布人" className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-3 text-sm font-bold outline-none focus:border-orange-400" /></label>
+          <label className="relative md:col-span-2"><Search className="absolute left-3 top-3 text-[#4f7c65]" size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜尋標題、內容、編號或發布單位" className="w-full rounded-xl border border-[#d8cfba] bg-white py-2.5 pl-10 pr-3 text-sm font-bold outline-none focus:border-[#0b5637]" /></label>
           <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold"><option value="all">全部分類</option>{CATEGORIES.map((value) => <option key={value}>{value}</option>)}</select>
           <select value={store} onChange={(e) => setStore(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-bold">{STORE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.value === 'all' ? '全部門市' : option.label}</option>)}</select>
         </div>
 
         <div className="mt-5 grid items-stretch gap-4 lg:grid-cols-2">
-        <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-950 text-white shadow-inner">
+        <div className="w-full overflow-hidden rounded-xl border border-[#bdd7c5] bg-[#f4f8f2] text-[#174d37] shadow-sm">
           <div className="flex items-center justify-between px-2 pb-2 pt-3 sm:px-3">
-            <button type="button" onClick={() => changeMonth(-1)} aria-label="上一個月" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800"><ChevronLeft size={16} /></button>
+            <button type="button" onClick={() => changeMonth(-1)} aria-label="上一個月" className="rounded-lg p-1.5 text-[#4f7c65] hover:bg-[#deeee2]"><ChevronLeft size={16} /></button>
             <div className="text-center">
-              <p className="text-base font-black text-white">{calendarMonth.slice(0, 4)} 年　{Number(calendarMonth.slice(5, 7))} 月</p>
-              <p className="text-[8px] font-bold text-slate-400">亮點代表當天有公告</p>
+              <p className="text-base font-black text-[#174d37]">{calendarMonth.slice(0, 4)} 年　{Number(calendarMonth.slice(5, 7))} 月</p>
+              <p className="text-[8px] font-bold text-[#789382]">亮點代表當天有公告</p>
             </div>
-            <button type="button" onClick={() => changeMonth(1)} aria-label="下一個月" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800"><ChevronRight size={16} /></button>
+            <button type="button" onClick={() => changeMonth(1)} aria-label="下一個月" className="rounded-lg p-1.5 text-[#4f7c65] hover:bg-[#deeee2]"><ChevronRight size={16} /></button>
           </div>
-          <div className="grid grid-cols-7 border-b border-slate-700 px-2 text-center text-[9px] font-black text-slate-400">
+          <div className="grid grid-cols-7 border-b border-[#cfe1d5] px-2 text-center text-[9px] font-black text-[#64806f]">
             {['日', '一', '二', '三', '四', '五', '六'].map((weekday, index) => <div key={weekday} className={`py-1.5 ${index === 0 || index === 6 ? 'text-slate-500' : ''}`}>{weekday}</div>)}
           </div>
           <div className="grid grid-cols-7 px-2 pb-2">
             {calendarDays.map((date, index) => {
-              if (!date) return <div key={`empty-${index}`} className="h-12 border-b border-slate-800" />;
+              if (!date) return <div key={`empty-${index}`} className="h-12 border-b border-[#dce9df]" />;
               const dateItems = announcementsByDate[date] || [];
               const count = dateItems.length;
               const active = selectedDate === date;
@@ -420,9 +422,9 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
                   type="button"
                   onClick={() => setSelectedDate(active ? '' : date)}
                   aria-label={`${date}${count ? `，${count} 篇公告` : '，沒有公告'}`}
-                  className="group relative flex h-12 flex-col items-center border-b border-slate-800 pt-1 text-xs font-black text-white transition hover:bg-slate-900"
+                  className="group relative flex h-12 flex-col items-center border-b border-[#dce9df] pt-1 text-xs font-black text-[#365f49] transition hover:bg-white"
                 >
-                  <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs ${active ? 'bg-red-500 text-white' : isToday ? 'ring-1 ring-orange-500 text-orange-400' : ''}`}>{Number(date.slice(8, 10))}</span>
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs ${active ? 'bg-[#e88024] text-white' : isToday ? 'ring-1 ring-[#e88024] text-[#d96710]' : ''}`}>{Number(date.slice(8, 10))}</span>
                   {count > 0 && (
                     <span className="mt-0.5 flex max-w-full items-center justify-center gap-0.5 px-0.5">
                       {dateItems.slice(0, 3).map((item, dotIndex) => (
@@ -436,10 +438,10 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
             })}
           </div>
         </div>
-        <aside className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <aside className="rounded-xl border border-[#e7dcc3] bg-[#f8f2e5] p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black tracking-widest text-orange-600">{selectedDate ? 'SELECTED DATE' : 'RECENT NOTICES'}</p>
+              <p className="text-[10px] font-black tracking-widest text-[#e06f14]">{selectedDate ? 'SELECTED DATE' : 'RECENT NOTICES'}</p>
               <h3 className="mt-1 text-lg font-black text-slate-800">{selectedDate ? `${dateLabel(selectedDate)} 公告` : '最近公告'}</h3>
             </div>
             {selectedDate && <button type="button" onClick={() => setSelectedDate('')} className="text-xs font-black text-slate-400 hover:text-orange-600">清除</button>}
@@ -447,7 +449,7 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
           <div className="mt-4 space-y-2">
             {sidePanelItems.length ? sidePanelItems.map((item) => {
               const level = LEVELS[item.priority] || LEVELS.normal;
-              return <button key={item.id} type="button" onClick={() => setSelected(item)} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-orange-300 hover:shadow-sm">
+              return <button key={item.id} type="button" onClick={() => setSelected(item)} className="w-full rounded-xl border border-[#dfd4bd] bg-white p-3 text-left transition hover:border-[#e88024] hover:shadow-sm">
                 <div className="flex items-start gap-3">
                   <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${level.dot}`} />
                   <span className="min-w-0 flex-1"><span className="block truncate text-sm font-black text-slate-800">{item.title}</span><span className="mt-1 block text-[10px] font-bold text-slate-400">{storeLabel(item.storeId)}・{item.category}・{dateLabel(item.announcementDate)}</span></span>
@@ -471,10 +473,10 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
         <div className="grid gap-4 md:grid-cols-2">
           {filtered.map((item) => {
             const level = LEVELS[item.priority] || LEVELS.normal;
-            return <article key={item.id} className={`group relative rounded-3xl border bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${item.pinned ? 'border-orange-300' : 'border-slate-200'}`}>
+            return <article key={item.id} className={`group relative rounded-3xl border bg-[#fffdf7] p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg ${item.pinned ? 'border-[#e88024]' : 'border-[#e7dcc3]'}`}>
               <button type="button" onClick={() => setSelected(item)} className="w-full text-left">
                 <div className="flex items-start justify-between gap-3"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${level.badge}`}>{level.label}</span>{item.pinned && <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-black text-amber-700"><Pin size={11} />置頂</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-500">{item.category}</span></div><span className="text-xs font-black text-slate-400">V{item.version || 1}</span></div>
-                <h3 className="mt-4 text-xl font-black leading-snug text-slate-800 group-hover:text-orange-600">{item.title}</h3>
+                <h3 className="mt-4 text-xl font-black leading-snug text-[#174d37] group-hover:text-[#d96710]">{item.title}</h3>
                 <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-sm font-medium leading-6 text-slate-500">{item.content}</p>
                 <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-4 text-xs font-bold text-slate-400"><span>{item.number}</span><span className="flex items-center gap-1"><CalendarDays size={13} />{dateLabel(item.announcementDate)}</span><span>{storeLabel(item.storeId)}</span></div>
               </button>
@@ -490,7 +492,7 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
             <div className="p-6 sm:p-8">
               <div className="flex flex-wrap gap-2"><span className={`rounded-full px-3 py-1 text-xs font-black ${(LEVELS[selected.priority] || LEVELS.normal).badge}`}>{(LEVELS[selected.priority] || LEVELS.normal).label}</span><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{selected.category}</span><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{storeLabel(selected.storeId)}</span>{selected.status === 'archived' && <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-700">已作廢</span>}</div>
               <h2 className="mt-5 text-3xl font-black leading-tight text-slate-900">{selected.title}</h2>
-              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs font-bold text-slate-400"><span>公告：{dateLabel(selected.announcementDate)}</span><span>生效：{dateLabel(selected.effectiveDate)}</span><span>發布人：{selected.publisher || '管理員'}</span></div>
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs font-bold text-slate-400"><span>公告：{dateLabel(selected.announcementDate)}</span><span>生效：{dateLabel(selected.effectiveDate)}</span><span>發布單位：{selected.publisher || PUBLISHER_OPTIONS[0]}</span></div>
               <div className="mt-7 whitespace-pre-wrap border-y border-slate-100 py-7 text-[15px] font-medium leading-8 text-slate-700">{selected.content}</div>
               {selected.imageData && <img src={selected.imageData} alt="公告附件" className="mt-6 max-h-96 rounded-2xl border border-slate-100 object-contain" />}
               {selected.attachmentUrl && <a href={selected.attachmentUrl} target="_blank" rel="noreferrer" className="mt-5 flex items-center gap-2 rounded-2xl bg-slate-50 p-4 font-black text-blue-600 hover:bg-blue-50"><Paperclip size={18} />{selected.attachmentName || '開啟附件'}<ExternalLink className="ml-auto" size={16} /></a>}
@@ -514,9 +516,9 @@ export default function Announcements({ db, currentManager, isAdmin, onRequestMa
               <label><span className="form-label">公告日期 *</span><input type="date" value={form.announcementDate} onChange={(e) => setForm({ ...form, announcementDate: e.target.value })} className="form-input" /></label>
               <label><span className="form-label">生效日期 *</span><input type="date" value={form.effectiveDate} onChange={(e) => setForm({ ...form, effectiveDate: e.target.value })} className="form-input" /></label>
               <label><span className="form-label">分類</span><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="form-input">{CATEGORIES.map((value) => <option key={value}>{value}</option>)}</select></label>
-              <label><span className="form-label">適用門市</span><select value={form.storeId} onChange={(e) => setForm({ ...form, storeId: e.target.value })} className="form-input">{STORE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <label><span className="form-label">適用門市</span><select value={form.storeId} onChange={(e) => setForm({ ...form, storeId: e.target.value, publisher: e.target.value === 'storeA' ? PUBLISHER_OPTIONS[0] : e.target.value === 'storeB' ? PUBLISHER_OPTIONS[1] : form.publisher })} className="form-input">{STORE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label><span className="form-label">重要程度</span><select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="form-input">{Object.entries(LEVELS).map(([value, detail]) => <option key={value} value={value}>{detail.label}</option>)}</select></label>
-              <div><span className="form-label">發布人</span><div className="form-input bg-slate-50 text-slate-500">{publisher}</div></div>
+              <label><span className="form-label">發布單位</span><select value={form.publisher} onChange={(e) => setForm({ ...form, publisher: e.target.value })} className="form-input">{PUBLISHER_OPTIONS.map((value) => <option key={value}>{value}</option>)}</select></label>
               <label className="sm:col-span-2"><span className="form-label">公告內容 *</span><textarea rows="9" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} className="form-input resize-y" placeholder="輸入完整公告內容，可使用換行與編號。" /></label>
               <label><span className="form-label">附件名稱</span><input value={form.attachmentName} onChange={(e) => setForm({ ...form, attachmentName: e.target.value })} className="form-input" placeholder="例如：作業流程 PDF" /></label>
               <label><span className="form-label">附件連結</span><input type="url" value={form.attachmentUrl} onChange={(e) => setForm({ ...form, attachmentUrl: e.target.value })} className="form-input" placeholder="https://…" /></label>
