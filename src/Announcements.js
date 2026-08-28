@@ -225,7 +225,7 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
       }
     );
     return unsubscribe;
-  }, [db, showMessage]);
+  }, [db, showMessage, deepLinkedAnnouncementId]);
 
   const itemsMatchingBasicFilters = useMemo(() => {
     const keyword = query.trim().toLowerCase();
