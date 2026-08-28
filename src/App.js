@@ -77,7 +77,7 @@ const App = () => {
   const [employees, setEmployees] = useState([]);
   const [logs, setLogs] = useState([]);
 
-  const [activeTab, setActiveTab] = useState('employee');
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get('tab') === 'announcements' ? 'announcements' : 'employee');
   const [selectedEmpId, setSelectedEmpId] = useState(null);
   const [showEmployeeStats, setShowEmployeeStats] = useState(false);
   const [openEmployeeStoreId, setOpenEmployeeStoreId] = useState(null);

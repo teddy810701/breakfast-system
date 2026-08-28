@@ -193,6 +193,7 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
   const [store, setStore] = useState('all');
   const [showArchived, setShowArchived] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const deepLinkedAnnouncementId = new URLSearchParams(window.location.search).get('announcement');
 
   const canManage = Boolean(isAdmin);
   const editorName = isAdmin ? '系統管理員' : '';
@@ -211,7 +212,10 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
         const next = snap.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
         next.sort((a, b) => Number(b.pinned) - Number(a.pinned) || sortTime(b.publishedAt || b.announcementDate) - sortTime(a.publishedAt || a.announcementDate));
         setItems(next);
-        setSelected((previous) => previous ? next.find((item) => item.id === previous.id) || null : null);
+        setSelected((previous) => {
+          if (deepLinkedAnnouncementId) return next.find((item) => item.id === deepLinkedAnnouncementId) || previous || null;
+          return previous ? next.find((item) => item.id === previous.id) || null : null;
+        });
         setLoading(false);
       },
       (error) => {
