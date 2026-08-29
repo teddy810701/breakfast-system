@@ -157,6 +157,17 @@ const App = () => {
       .slice(0, 12);
   };
 
+  // 允許數字欄位在輸入過程中暫時留白，儲存時再回到安全的數字值。
+  const normalizeNonNegativeInteger = (value, fallback = 0) => {
+    if (value === '' || value === null || value === undefined) return fallback;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+  };
+
+  const normalizeSkillProgress = (value) => {
+    return Math.min(100, normalizeNonNegativeInteger(value));
+  };
+
   const showMessage = (text, type = 'info') => {
     setSystemMessage({ text, type });
     setTimeout(() => setSystemMessage(null), 3000);
@@ -820,9 +831,14 @@ const App = () => {
       return;
     }
 
+    const skillsPassed = normalizeNonNegativeInteger(editingEmp.skillsPassed);
+    const skillProgress = normalizeSkillProgress(editingEmp.skillProgress);
+
     try {
       const newEmpRef = await addDoc(collection(db, 'stores', storeId, 'employees'), {
         ...editingEmp,
+        skillsPassed,
+        skillProgress,
         birthdayId,
         storeId,
         shop: getStoreLabel(storeId),
@@ -1017,6 +1033,8 @@ const App = () => {
     try {
       const payload = {
         ...employeePayload,
+        skillsPassed: normalizeNonNegativeInteger(editingEmp.skillsPassed),
+        skillProgress: normalizeSkillProgress(editingEmp.skillProgress),
         birthdayId,
         storeId: targetStoreId,
         shop: getStoreLabel(targetStoreId)
@@ -1857,13 +1875,17 @@ const App = () => {
                   </label>
                   <input
                     type="number"
-                    value={editingEmp.skillsPassed}
-                    onChange={(e) =>
+                    value={editingEmp.skillsPassed ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
                       setEditingEmp({
                         ...editingEmp,
-                        skillsPassed: parseInt(e.target.value, 10) || 0
-                      })
-                    }
+                        skillsPassed:
+                          value === ''
+                            ? ''
+                            : normalizeNonNegativeInteger(value)
+                      });
+                    }}
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
                   />
                 </div>
@@ -1877,13 +1899,15 @@ const App = () => {
                   type="number"
                   min="0"
                   max="100"
-                  value={editingEmp.skillProgress || 0}
-                  onChange={(e) =>
+                  value={editingEmp.skillProgress ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
                     setEditingEmp({
                       ...editingEmp,
-                      skillProgress: Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0))
-                    })
-                  }
+                      skillProgress:
+                        value === '' ? '' : normalizeSkillProgress(value)
+                    });
+                  }}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:border-orange-500 outline-none font-bold"
                 />
                 <p className="text-[10px] text-gray-400 font-bold ml-1">例如已過 2 關、這裡填 70，就會顯示「第 3 關 70%」。</p>
