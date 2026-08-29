@@ -79,6 +79,7 @@ const App = () => {
 
   const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get('tab') === 'announcements' ? 'announcements' : 'employee');
   const [selectedEmpId, setSelectedEmpId] = useState(null);
+  const [managerEmployeeDetailsOpen, setManagerEmployeeDetailsOpen] = useState(false);
   const [showEmployeeStats, setShowEmployeeStats] = useState(false);
   const [openEmployeeStoreId, setOpenEmployeeStoreId] = useState(null);
   const [showPenaltyLeaderDetails, setShowPenaltyLeaderDetails] = useState(false);
@@ -126,6 +127,13 @@ const App = () => {
   const [adminSearch, setAdminSearch] = useState('');
   const [adminStoreFilter, setAdminStoreFilter] = useState('all');
   const [adminStatusFilter, setAdminStatusFilter] = useState('all');
+  const [adminPointEmpId, setAdminPointEmpId] = useState('');
+  const [adminPointAmount, setAdminPointAmount] = useState('');
+  const [adminPointReason, setAdminPointReason] = useState('');
+  const [adminPointNote, setAdminPointNote] = useState('');
+  const [adminPointDate, setAdminPointDate] = useState(
+    new Date().toISOString().split('T')[0]
+  );
 
   const [missedClockForm, setMissedClockForm] = useState({
     requestDate: new Date().toISOString().split('T')[0],
@@ -847,7 +855,7 @@ const App = () => {
   };
 
   // ===== 加扣分 =====
-  const handlePointChange = async (empId, amount, reason) => {
+  const handlePointChange = async (empId, amount, reason, options = {}) => {
     const emp = employees.find((e) => e.id === empId);
     if (!emp) {
       showMessage('找不到員工資料', 'error');
@@ -859,8 +867,8 @@ const App = () => {
         empId,
         amount,
         reason,
-        note,
-        occurrenceDate,
+        note: options.note ?? note,
+        occurrenceDate: options.occurrenceDate ?? occurrenceDate,
         timestamp: new Date().toISOString(),
         createdAt: Date.now(),
         name: emp.name,
@@ -871,13 +879,47 @@ const App = () => {
         actionType: 'score_change'
       });
 
-      setNote('');
-      setSelectedItemLabel('');
-      setCustomPoints('0');
+      if (!options.preserveForm) {
+        setNote('');
+        setSelectedItemLabel('');
+        setCustomPoints('0');
+      }
       showMessage('紀錄已新增', 'success');
+      return true;
     } catch (error) {
       console.error('新增紀錄失敗:', error);
       showMessage('新增紀錄失敗', 'error');
+      return false;
+    }
+  };
+
+  const handleAdminPointChange = async () => {
+    const amount = Number(adminPointAmount);
+    const reason = adminPointReason.trim();
+
+    if (!adminPointEmpId) {
+      showMessage('請先選擇要調整積分的員工', 'error');
+      return;
+    }
+    if (!Number.isInteger(amount) || amount === 0) {
+      showMessage('請輸入非 0 的整數點數，例如 +5 或 -3', 'error');
+      return;
+    }
+    if (!reason) {
+      showMessage('請填寫加扣分原因', 'error');
+      return;
+    }
+
+    const saved = await handlePointChange(adminPointEmpId, amount, reason, {
+      note: adminPointNote.trim(),
+      occurrenceDate: adminPointDate,
+      preserveForm: true
+    });
+
+    if (saved) {
+      setAdminPointAmount('');
+      setAdminPointReason('');
+      setAdminPointNote('');
     }
   };
 
@@ -3026,32 +3068,136 @@ const App = () => {
                 </div>
               </div>
 
+              <div className="rounded-[2rem] bg-orange-50 border border-orange-100 p-5 sm:p-6 mb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
+                  <div>
+                    <h3 className="font-black text-gray-800 flex items-center gap-2">
+                      <Sparkles size={18} className="text-orange-600" />
+                      快速加扣分
+                    </h3>
+                    <p className="text-xs text-gray-500 font-bold mt-1">先選擇員工與考核項目，再確認點數後儲存。</p>
+                  </div>
+                  {selectedEmp && (
+                    <button
+                      type="button"
+                      onClick={() => setManagerEmployeeDetailsOpen(true)}
+                      className="px-3 py-2 rounded-xl bg-white border border-orange-200 text-xs font-black text-orange-700 hover:bg-orange-100 transition-colors"
+                    >
+                      查看 {selectedEmp.name} 的詳細資料
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <label className="space-y-2">
+                    <span className="text-xs font-black text-gray-500 uppercase tracking-widest ml-1">員工</span>
+                    <select
+                      value={selectedEmpId || ''}
+                      onChange={(e) => {
+                        setSelectedEmpId(e.target.value || null);
+                        setManagerEmployeeDetailsOpen(false);
+                      }}
+                      className="w-full bg-white border-2 border-orange-100 px-4 py-3.5 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                    >
+                      <option value="">請選擇夥伴</option>
+                      {sortedVisibleEmployees.map((emp) => (
+                        <option key={`quick-score-${emp.id}`} value={emp.id}>{emp.name}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-xs font-black text-gray-500 uppercase tracking-widest ml-1">考核項目</span>
+                    <select
+                      value={selectedItemLabel}
+                      onChange={(e) => {
+                        const label = e.target.value;
+                        setSelectedItemLabel(label);
+                        const item = [...PERFORMANCE_ITEMS.penalty, ...PERFORMANCE_ITEMS.bonus].find((candidate) => candidate.label === label);
+                        if (item) setCustomPoints(String(item.val));
+                      }}
+                      className="w-full bg-white border-2 border-orange-100 px-4 py-3.5 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                    >
+                      <option value="">請選擇考核標籤</option>
+                      <optgroup label="扣分項目">
+                        {PERFORMANCE_ITEMS.penalty.map((item) => <option key={`quick-penalty-${item.label}`} value={item.label}>{item.label}（{item.val} 分）</option>)}
+                      </optgroup>
+                      <optgroup label="加分項目">
+                        {PERFORMANCE_ITEMS.bonus.map((item) => <option key={`quick-bonus-${item.label}`} value={item.label}>{item.label}（+{item.val} 分）</option>)}
+                      </optgroup>
+                    </select>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-xs font-black text-gray-500 uppercase tracking-widest ml-1">點數（可修改）</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={customPoints}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (/^-?\d*$/.test(value)) setCustomPoints(value);
+                      }}
+                      placeholder="例如 -10 或 5"
+                      className="w-full bg-white border-2 border-orange-100 px-4 py-3.5 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                    />
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-xs font-black text-gray-500 uppercase tracking-widest ml-1">備註（選填）</span>
+                    <input
+                      type="text"
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="補充本次情況"
+                      className="w-full bg-white border-2 border-orange-100 px-4 py-3.5 rounded-2xl font-bold text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                    />
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!selectedEmp) return showMessage('請先選擇夥伴', 'error');
+                    if (!selectedItemLabel) return showMessage('請先選擇考核項目', 'error');
+                    const scoreAmount = Number(customPoints);
+                    if (customPoints === '' || customPoints === '-' || Number.isNaN(scoreAmount)) return showMessage('請輸入正確點數，例如 -10 或 5', 'error');
+                    handlePointChange(selectedEmp.id, scoreAmount, selectedItemLabel);
+                  }}
+                  className="mt-4 w-full py-3.5 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2"
+                >
+                  <ArrowRight size={18} />
+                  儲存加扣分
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
                 {sortedVisibleEmployees.map((emp) => {
                   const assessment = getEmployeeAssessment(emp);
-                  const seniority = calculateSeniority(emp.startDate);
                   const warnings = getEmployeeWarnings(emp);
 
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={`manager-overview-${emp.id}`}
+                      onClick={() => {
+                        setSelectedEmpId(emp.id);
+                        setManagerEmployeeDetailsOpen(true);
+                      }}
                       className={`rounded-[2rem] border p-5 transition-all ${
                         selectedEmpId === emp.id
                           ? 'border-orange-300 bg-orange-50 shadow-lg shadow-orange-100'
-                          : 'border-gray-100 bg-gray-50'
+                          : 'border-gray-100 bg-gray-50 hover:border-orange-200 hover:bg-white'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3 mb-4">
-                        <div>
+                      <div className="flex items-center justify-between gap-3 text-left">
+                        <div className="min-w-0">
                           <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
                             {getStoreLabel(emp.storeId)}
                           </p>
                           <h3 className="text-lg font-black text-gray-800 mt-1">{emp.name}</h3>
-                          <p className="text-xs text-gray-400 font-bold mt-1">
-                            {emp.level || '一般夥伴'}
-                          </p>
+                          <p className="text-xs text-gray-400 font-bold mt-1">今年 {assessment.thisYearPoints} 分</p>
                         </div>
-
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-black ${
                             warnings.length > 0
@@ -3062,64 +3208,11 @@ const App = () => {
                           {warnings.length > 0 ? '需要注意' : '狀態穩定'}
                         </span>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
-                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">今年分數</p>
-                          <p className="text-xl font-black text-gray-800 mt-2">{assessment.thisYearPoints}</p>
-                        </div>
-                        <div className="bg-white rounded-2xl border border-gray-100 px-4 py-3">
-                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">年資</p>
-                          <p className="text-base font-black text-gray-800 mt-2">{seniority.text}</p>
-                        </div>
+                      <div className="mt-4 pt-3 border-t border-black/5 flex items-center justify-between text-xs font-black text-gray-500">
+                        <span>{emp.level || '一般夥伴'} · 本月 {getEmployeeMonthlyPoints(emp.id)} 分</span>
+                        <span className="text-orange-600">查看詳細 →</span>
                       </div>
-
-                      <div className="space-y-2 mb-4">
-                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
-                          <span>技能通過</span>
-                          <span>{emp.skillsPassed || 0}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
-                          <span>本月忘打卡</span>
-                          <span className="text-orange-600">{getEmployeeMonthlyMissedClockCount(emp.id)} 次</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
-                          <span>當月積分</span>
-                          <span className="text-blue-600">{getEmployeeMonthlyPoints(emp.id)} 分</span>
-                        </div>
-                        <div className="flex items-center justify-between text-sm font-bold text-gray-600">
-                          <span>年度狀態</span>
-                          <span className={`px-2.5 py-1 rounded-full text-xs ${assessment.result.bg}`}>
-                            {assessment.result.status}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {warnings.length > 0 ? (
-                          warnings.slice(0, 3).map((warning) => (
-                            <span
-                              key={warning.key}
-                              className={`px-2.5 py-1 rounded-full border text-[11px] font-black ${getWarningBadgeClass(warning.level)}`}
-                            >
-                              {warning.label}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-full border text-[11px] font-black bg-green-50 text-green-700 border-green-100">
-                            本月狀況正常
-                          </span>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setSelectedEmpId(emp.id)}
-                        className="w-full py-3 rounded-2xl bg-white border border-gray-200 text-gray-700 font-black hover:border-orange-300 hover:text-orange-600 transition-colors"
-                      >
-                        {selectedEmpId === emp.id ? '目前選取中' : '選取這位夥伴'}
-                      </button>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -3128,7 +3221,10 @@ const App = () => {
                 {sortedVisibleEmployees.map((emp) => (
                   <button
                     key={emp.id}
-                    onClick={() => setSelectedEmpId(emp.id)}
+                    onClick={() => {
+                      setSelectedEmpId(emp.id);
+                      setManagerEmployeeDetailsOpen(false);
+                    }}
                     className={`px-5 py-4 rounded-2xl whitespace-nowrap border-2 transition-all min-w-[140px] text-left ${
                       selectedEmpId === emp.id
                         ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-lg shadow-orange-100'
@@ -3150,8 +3246,21 @@ const App = () => {
                 )}
               </div>
 
-              {selectedEmp ? (
+              {selectedEmp && managerEmployeeDetailsOpen ? (
                 <>
+                  <div className="flex items-center justify-between gap-3 mb-5">
+                    <div>
+                      <h3 className="font-black text-gray-800">{selectedEmp.name} 的詳細資料</h3>
+                      <p className="text-xs text-gray-400 font-bold mt-1">可查看完整紀錄與管理這位夥伴的資料。</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setManagerEmployeeDetailsOpen(false)}
+                      className="px-3 py-2 rounded-xl bg-gray-100 text-xs font-black text-gray-600 hover:bg-gray-200 transition-colors"
+                    >
+                      收合詳細資料
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                     <div className="md:col-span-2 space-y-2">
                       <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
@@ -3194,30 +3303,17 @@ const App = () => {
                       <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
                         點數
                       </label>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const raw = String(customPoints || '0');
-                            const normalized = raw.startsWith('-') ? raw.slice(1) || '0' : `-${raw || '0'}`;
-                            setCustomPoints(normalized);
-                          }}
-                          className="w-16 shrink-0 bg-orange-50 border-2 border-orange-200 px-4 py-4 rounded-2xl font-black text-orange-600 hover:bg-orange-100 transition-colors"
-                        >
-                          −
-                        </button>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={customPoints}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (/^-?\d*$/.test(value)) setCustomPoints(value);
-                          }}
-                          placeholder="例如 -10 或 5"
-                          className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
-                        />
-                      </div>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={customPoints}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (/^-?\d*$/.test(value)) setCustomPoints(value);
+                        }}
+                        placeholder="例如 -10 或 5"
+                        className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                      />
                     </div>
                   </div>
 
@@ -3474,6 +3570,120 @@ const App = () => {
                   <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">{getStoreLabel('storeB')}</p>
                   <p className="text-2xl font-black mt-2 text-orange-600">{adminStoreStats.storeB}</p>
                 </div>
+              </div>
+            </section>
+
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+              <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-6">
+                <div>
+                  <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                    <Sparkles size={19} className="text-orange-500" />
+                    員工加扣分
+                  </h3>
+                  <p className="text-xs text-gray-400 font-bold mt-1">
+                    管理員可直接調整兩間門市員工的積分；紀錄會同步到員工 App 與積分明細。
+                  </p>
+                </div>
+                <div className="px-3 py-2 rounded-xl bg-orange-50 border border-orange-100 text-xs font-black text-orange-700">
+                  正數加分・負數扣分
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <label className="space-y-2">
+                  <span className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">員工</span>
+                  <select
+                    value={adminPointEmpId}
+                    onChange={(e) => setAdminPointEmpId(e.target.value)}
+                    className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-3.5 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                  >
+                    <option value="">請選擇員工</option>
+                    {sortedVisibleEmployees.map((emp) => (
+                      <option key={`admin-point-${emp.id}`} value={emp.id}>
+                        {emp.name}（{getStoreLabel(emp.storeId)}）
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">考核項目</span>
+                  <select
+                    value={adminPointReason}
+                    onChange={(e) => {
+                      const label = e.target.value;
+                      setAdminPointReason(label);
+                      const item = [...PERFORMANCE_ITEMS.penalty, ...PERFORMANCE_ITEMS.bonus]
+                        .find((candidate) => candidate.label === label);
+                      if (item) setAdminPointAmount(String(item.val));
+                    }}
+                    className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-3.5 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                  >
+                    <option value="">請選擇考核標籤</option>
+                    <optgroup label="扣分項目">
+                      {PERFORMANCE_ITEMS.penalty.map((item) => (
+                        <option key={`admin-penalty-${item.label}`} value={item.label}>
+                          {item.label}（{item.val} 分）
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="加分項目">
+                      {PERFORMANCE_ITEMS.bonus.map((item) => (
+                        <option key={`admin-bonus-${item.label}`} value={item.label}>
+                          {item.label}（+{item.val} 分）
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">點數（可自行修改）</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={adminPointAmount}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (/^[+-]?\d*$/.test(value)) setAdminPointAmount(value);
+                    }}
+                    placeholder="例如 +5 或 -3"
+                    className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-3.5 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">發生日</span>
+                  <input
+                    type="date"
+                    value={adminPointDate}
+                    onChange={(e) => setAdminPointDate(e.target.value)}
+                    className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-3.5 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                  />
+                </label>
+
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_220px] gap-4 items-end">
+                <label className="space-y-2">
+                  <span className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">備註（選填）</span>
+                  <input
+                    type="text"
+                    value={adminPointNote}
+                    onChange={(e) => setAdminPointNote(e.target.value)}
+                    maxLength={200}
+                    placeholder="補充本次加扣分的情況"
+                    className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-3.5 rounded-2xl font-bold text-gray-700 focus:border-orange-400 outline-none transition-colors"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAdminPointChange}
+                  className="py-3.5 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2"
+                >
+                  <ArrowRight size={18} />
+                  儲存加扣分
+                </button>
               </div>
             </section>
 
