@@ -3171,81 +3171,6 @@ const App = () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
-                {sortedVisibleEmployees.map((emp) => {
-                  const assessment = getEmployeeAssessment(emp);
-                  const warnings = getEmployeeWarnings(emp);
-
-                  return (
-                    <button
-                      type="button"
-                      key={`manager-overview-${emp.id}`}
-                      onClick={() => {
-                        setSelectedEmpId(emp.id);
-                        setManagerEmployeeDetailsOpen(true);
-                      }}
-                      className={`rounded-[2rem] border p-5 transition-all ${
-                        selectedEmpId === emp.id
-                          ? 'border-orange-300 bg-orange-50 shadow-lg shadow-orange-100'
-                          : 'border-gray-100 bg-gray-50 hover:border-orange-200 hover:bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3 text-left">
-                        <div className="min-w-0">
-                          <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">
-                            {getStoreLabel(emp.storeId)}
-                          </p>
-                          <h3 className="text-lg font-black text-gray-800 mt-1">{emp.name}</h3>
-                          <p className="text-xs text-gray-400 font-bold mt-1">今年 {assessment.thisYearPoints} 分</p>
-                        </div>
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-black ${
-                            warnings.length > 0
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-green-100 text-green-700'
-                          }`}
-                        >
-                          {warnings.length > 0 ? '需要注意' : '狀態穩定'}
-                        </span>
-                      </div>
-                      <div className="mt-4 pt-3 border-t border-black/5 flex items-center justify-between text-xs font-black text-gray-500">
-                        <span>{emp.level || '一般夥伴'} · 本月 {getEmployeeMonthlyPoints(emp.id)} 分</span>
-                        <span className="text-orange-600">查看詳細 →</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="flex gap-3 mb-10 overflow-x-auto pb-4">
-                {sortedVisibleEmployees.map((emp) => (
-                  <button
-                    key={emp.id}
-                    onClick={() => {
-                      setSelectedEmpId(emp.id);
-                      setManagerEmployeeDetailsOpen(false);
-                    }}
-                    className={`px-5 py-4 rounded-2xl whitespace-nowrap border-2 transition-all min-w-[140px] text-left ${
-                      selectedEmpId === emp.id
-                        ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-lg shadow-orange-100'
-                        : 'border-gray-50 bg-white hover:border-gray-200 text-gray-400'
-                    }`}
-                    type="button"
-                  >
-                    <p className="text-[10px] opacity-60 font-black mb-1">
-                      {emp.shop}
-                    </p>
-                    <span className="block font-black text-lg">{emp.name}</span>
-                  </button>
-                ))}
-
-                {sortedVisibleEmployees.length === 0 && (
-                  <div className="px-5 py-4 rounded-2xl border-2 border-dashed border-gray-200 text-gray-400 font-black">
-                    此分店目前沒有夥伴
-                  </div>
-                )}
-              </div>
-
               {selectedEmp && managerEmployeeDetailsOpen ? (
                 <>
                   <div className="flex items-center justify-between gap-3 mb-5">
@@ -3261,100 +3186,74 @@ const App = () => {
                       收合詳細資料
                     </button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    <div className="md:col-span-2 space-y-2">
-                      <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
-                        考核項目
-                      </label>
-                      <select
-                        value={selectedItemLabel}
-                        onChange={(e) => {
-                          const label = e.target.value;
-                          setSelectedItemLabel(label);
 
-                          const allItems = [
-                            ...PERFORMANCE_ITEMS.penalty,
-                            ...PERFORMANCE_ITEMS.bonus
-                          ];
-                          const item = allItems.find((i) => i.label === label);
-                          if (item) setCustomPoints(item.val);
-                        }}
-                        className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors appearance-none"
-                      >
-                        <option value="">請選擇考核標籤</option>
-                        <optgroup label="🔴 扣分項目 (Penalty)">
-                          {PERFORMANCE_ITEMS.penalty.map((i) => (
-                            <option key={i.label} value={i.label}>
-                              {i.label} ({i.val})
-                            </option>
-                          ))}
-                        </optgroup>
-                        <optgroup label="🟢 獎勵項目 (Bonus)">
-                          {PERFORMANCE_ITEMS.bonus.map((i) => (
-                            <option key={i.label} value={i.label}>
-                              {i.label} (+{i.val})
-                            </option>
-                          ))}
-                        </optgroup>
-                      </select>
-                    </div>
+                  {(() => {
+                    const assessment = getEmployeeAssessment(selectedEmp);
+                    const seniority = calculateSeniority(selectedEmp.startDate);
+                    const warnings = getEmployeeWarnings(selectedEmp);
 
-                    <div className="space-y-2">
-                      <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
-                        點數
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={customPoints}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (/^-?\d*$/.test(value)) setCustomPoints(value);
-                        }}
-                        placeholder="例如 -10 或 5"
-                        className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-black text-gray-700 focus:border-orange-400 outline-none transition-colors"
-                      />
-                    </div>
-                  </div>
+                    return (
+                      <div className="mb-6 rounded-[2rem] border border-orange-100 bg-orange-50/60 p-5 sm:p-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
+                              {getStoreLabel(selectedEmp.storeId)}
+                            </p>
+                            <h4 className="text-xl font-black text-gray-800 mt-1">{selectedEmp.name}</h4>
+                          </div>
+                          <span className={`w-fit px-3 py-1.5 rounded-full text-xs font-black ${assessment.result.bg}`}>
+                            {assessment.result.status}
+                          </span>
+                        </div>
 
-                  <div className="space-y-2 mb-6">
-                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
-                      備註
-                    </label>
-                    <textarea
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      rows={3}
-                      className="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl font-bold text-gray-700 focus:border-orange-400 outline-none transition-colors resize-none"
-                      placeholder="可選填當次情況說明"
-                    />
-                  </div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          <div className="rounded-2xl bg-white border border-orange-100 p-4">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">今年積分</p>
+                            <p className="text-xl font-black text-gray-800 mt-2">{assessment.thisYearPoints} 分</p>
+                          </div>
+                          <div className="rounded-2xl bg-white border border-orange-100 p-4">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">年資</p>
+                            <p className="text-xl font-black text-gray-800 mt-2">{seniority.text}</p>
+                          </div>
+                          <div className="rounded-2xl bg-white border border-orange-100 p-4">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">本月積分</p>
+                            <p className="text-xl font-black text-blue-600 mt-2">{getEmployeeMonthlyPoints(selectedEmp.id)} 分</p>
+                          </div>
+                          <div className="rounded-2xl bg-white border border-orange-100 p-4">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">本月忘打卡</p>
+                            <p className="text-xl font-black text-orange-600 mt-2">{getEmployeeMonthlyMissedClockCount(selectedEmp.id)} 次</p>
+                          </div>
+                          <div className="rounded-2xl bg-white border border-orange-100 p-4">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">技能通過</p>
+                            <p className="text-xl font-black text-gray-800 mt-2">{selectedEmp.skillsPassed || 0}</p>
+                          </div>
+                          <div className="rounded-2xl bg-white border border-orange-100 p-4">
+                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">職級</p>
+                            <p className="text-base font-black text-gray-800 mt-2">{selectedEmp.level || '一般夥伴'}</p>
+                          </div>
+                        </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                    <button
-                      onClick={() => {
-                        if (!selectedItemLabel) {
-                          showMessage('請先選擇考核項目', 'error');
-                          return;
-                        }
-                        const scoreAmount = Number(customPoints);
-                        if (customPoints === '' || customPoints === '-' || Number.isNaN(scoreAmount)) {
-                          showMessage('請輸入正確點數，例如 -10 或 5', 'error');
-                          return;
-                        }
-                        handlePointChange(
-                          selectedEmp.id,
-                          scoreAmount,
-                          selectedItemLabel
-                        );
-                      }}
-                      className="py-4 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors flex items-center justify-center gap-2"
-                      type="button"
-                    >
-                      <ArrowRight size={18} />
-                      提交評分
-                    </button>
+                        <div className="flex flex-wrap gap-2 mt-4">
+                          {warnings.length > 0 ? (
+                            warnings.map((warning) => (
+                              <span
+                                key={`manager-detail-warning-${warning.key}`}
+                                className={`px-2.5 py-1 rounded-full border text-[11px] font-black ${getWarningBadgeClass(warning.level)}`}
+                              >
+                                {warning.label}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full border text-[11px] font-black bg-green-50 text-green-700 border-green-100">
+                              本月狀況正常
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                     <button
                       onClick={() => {
                         setEditingEmp({ ...selectedEmp, _originalStoreId: selectedEmp.storeId });
