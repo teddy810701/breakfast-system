@@ -104,6 +104,7 @@ const App = () => {
   const [selectedMonth, setSelectedMonth] = useState(
     new Date().toISOString().substring(0, 7)
   );
+  const [monthlySummaryEmpId, setMonthlySummaryEmpId] = useState(null);
   const [personalLogCategory, setPersonalLogCategory] = useState('all');
   const [personalLogSearch, setPersonalLogSearch] = useState('');
   const [editingEmp, setEditingEmp] = useState(null);
@@ -1223,6 +1224,31 @@ const App = () => {
     );
 
     return MONTHLY_BASE_POINTS + monthlyDelta;
+  };
+
+  const monthlySummaryRows = useMemo(() => {
+    return employees.map((emp) => {
+      const monthLogs = getEmployeeMonthLogs(emp.id, selectedMonth);
+      const bonus = monthLogs.filter((log) => Number(log.amount) > 0).reduce((sum, log) => sum + (Number(log.amount) || 0), 0);
+      const penalty = monthLogs.filter((log) => Number(log.amount) < 0).reduce((sum, log) => sum + Math.abs(Number(log.amount) || 0), 0);
+      return { ...emp, monthLogs, bonus, penalty, delta: bonus - penalty, finalPoints: MONTHLY_BASE_POINTS + bonus - penalty };
+    }).sort((a, b) => b.finalPoints - a.finalPoints || String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hant'));
+  }, [employees, logs, selectedMonth]);
+
+  const exportMonthlySummary = () => {
+    const headers = ['排名', '員工', '店別', '基礎分', '加分', '扣分', '月底積分'];
+    const rows = monthlySummaryRows.map((row, index) => [index + 1, row.name || '', getStoreLabel(row.storeId), MONTHLY_BASE_POINTS, row.bonus, row.penalty, row.finalPoints]);
+    const csv = [headers, ...rows].map((line) => line.map((value) => `"${formatExcelValue(value)}"`).join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `每月積分總表_${selectedMonth}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    showMessage('每月積分總表已匯出', 'success');
   };
 
   const isLateLog = (log) => {
@@ -3494,6 +3520,16 @@ const App = () => {
                   <p className="text-2xl font-black mt-2 text-orange-600">{adminStoreStats.storeB}</p>
                 </div>
               </div>
+            </section>
+
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
+                <div><h3 className="text-lg font-black text-gray-800 flex items-center gap-2"><Calendar size={19} className="text-orange-500" />每月積分總表</h3><p className="text-xs text-gray-400 font-bold mt-1">基礎 50 分＋選定月份所有加扣分，依月底分數排序。</p></div>
+                <div className="flex flex-col sm:flex-row gap-2"><input type="month" value={selectedMonth} onChange={(e) => { setSelectedMonth(e.target.value); setMonthlySummaryEmpId(null); }} className="px-4 py-3 bg-orange-50 border border-orange-100 rounded-2xl font-black text-orange-700 outline-none" /><button type="button" onClick={exportMonthlySummary} className="px-4 py-3 rounded-2xl bg-orange-600 text-white font-black hover:bg-orange-700 transition-colors">下載 Excel</button></div>
+              </div>
+              <div className="overflow-x-auto"><table className="w-full text-left min-w-[620px]"><thead><tr className="text-xs text-gray-400 border-b border-gray-100"><th className="p-3">排名</th><th className="p-3">員工</th><th className="p-3">店別</th><th className="p-3 text-right">加扣分</th><th className="p-3 text-right">月底積分</th></tr></thead><tbody>
+                {monthlySummaryRows.map((row, index) => <React.Fragment key={`monthly-summary-${row.id}`}><tr onClick={() => setMonthlySummaryEmpId(monthlySummaryEmpId === row.id ? null : row.id)} className="border-b border-gray-50 hover:bg-orange-50/50 cursor-pointer font-bold"><td className="p-3 text-gray-400">{index + 1}</td><td className="p-3 text-gray-800">{row.name}</td><td className="p-3 text-gray-500">{getStoreLabel(row.storeId)}</td><td className={`p-3 text-right ${row.delta >= 0 ? 'text-green-600' : 'text-red-600'}`}>{row.delta > 0 ? '+' : ''}{row.delta}</td><td className="p-3 text-right text-xl text-orange-600">{row.finalPoints}</td></tr>{monthlySummaryEmpId === row.id && <tr><td colSpan="5" className="p-4 bg-gray-50"><div className="space-y-2">{row.monthLogs.length ? row.monthLogs.map((log) => <div key={log.id} className="flex justify-between text-sm"><span>{formatDate(log.occurrenceDate)} · {log.reason}{log.note ? ` · ${log.note}` : ''}</span><strong className={Number(log.amount) >= 0 ? 'text-green-600' : 'text-red-600'}>{Number(log.amount) > 0 ? '+' : ''}{log.amount}</strong></div>) : <span className="text-sm text-gray-400">本月沒有加扣分紀錄</span>}</div></td></tr>}</React.Fragment>)}
+              </tbody></table></div>
             </section>
 
             <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
