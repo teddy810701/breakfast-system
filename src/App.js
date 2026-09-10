@@ -1238,12 +1238,14 @@ const App = () => {
   const exportMonthlySummary = () => {
     const headers = ['排名', '員工', '店別', '基礎分', '加分', '扣分', '月底積分'];
     const rows = monthlySummaryRows.map((row, index) => [index + 1, row.name || '', getStoreLabel(row.storeId), MONTHLY_BASE_POINTS, row.bonus, row.penalty, row.finalPoints]);
-    const csv = [headers, ...rows].map((line) => line.map((value) => `"${formatExcelValue(value)}"`).join(',')).join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const escapeHtml = (value) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const tableRows = [headers, ...rows].map((line, index) => `<tr>${line.map((value) => index === 0 ? `<th>${escapeHtml(value)}</th>` : `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,"Microsoft JhengHei"}table{border-collapse:collapse}th,td{border:1px solid #999;padding:8px}th{background:#f97316;color:#fff}</style></head><body><table>${tableRows}</table></body></html>`;
+    const blob = new Blob(['\ufeff', html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `每月積分總表_${selectedMonth}.csv`;
+    link.download = `每月積分總表_${selectedMonth}.xls`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
