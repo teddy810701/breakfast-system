@@ -79,6 +79,10 @@ const dateLabel = (value) => {
   return y && m && d ? `${y}/${m}/${d}` : value;
 };
 
+const employeeVisibleUntil = (category) => category === '人事'
+  ? new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+  : '';
+
 const storeLabel = (value) => STORE_OPTIONS.find((item) => item.value === value)?.label || value;
 
 const sortTime = (value) => {
@@ -101,6 +105,7 @@ const snapshotVersion = (record, editor, note) => ({
   attachmentName: record.attachmentName || '',
   attachmentUrl: record.attachmentUrl || '',
   imageData: record.imageData || '',
+  employeeVisibleUntil: record.employeeVisibleUntil || '',
   status: record.status,
   savedAt: new Date().toISOString(),
   savedBy: editor,
@@ -327,6 +332,7 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
         await updateDoc(doc(db, 'stores', 'shared', 'announcements', editing.id), {
           ...announcementFields,
           title: form.title.trim(), content: form.content.trim(), attachmentUrl: form.attachmentUrl.trim(), attachmentName: form.attachmentName.trim(),
+          employeeVisibleUntil: employeeVisibleUntil(form.category),
           version: (editing.version || 1) + 1, versions: history, updatedAt: now, updatedBy: editorName
         });
         showMessage('公告已更新並保留舊版本', 'success');
@@ -343,7 +349,8 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
         const { isNew, ...announcementFields } = form;
         await addDoc(collection(db, 'stores', 'shared', 'announcements'), {
           ...announcementFields, title: form.title.trim(), content: form.content.trim(), attachmentUrl: form.attachmentUrl.trim(), attachmentName: form.attachmentName.trim(),
-          number, version: 1, versions: [], status: 'published', publisher: form.publisher, publishedAt: now, updatedAt: now
+          number, version: 1, versions: [], status: 'published', publisher: form.publisher, publishedAt: now, updatedAt: now,
+          employeeVisibleUntil: employeeVisibleUntil(form.category)
         });
         showMessage(`公告 ${number} 已發布`, 'success');
       }
@@ -519,7 +526,7 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
               <label className="sm:col-span-2"><span className="form-label">公告標題 *</span><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="form-input" placeholder="例如：報廢商品處理規範" /></label>
               <label><span className="form-label">公告日期 *</span><input type="date" value={form.announcementDate} onChange={(e) => setForm({ ...form, announcementDate: e.target.value })} className="form-input" /></label>
               <label><span className="form-label">生效日期 *</span><input type="date" value={form.effectiveDate} onChange={(e) => setForm({ ...form, effectiveDate: e.target.value })} className="form-input" /></label>
-              <label><span className="form-label">分類</span><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="form-input">{CATEGORIES.map((value) => <option key={value}>{value}</option>)}</select></label>
+              <label><span className="form-label">分類</span><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="form-input">{CATEGORIES.map((value) => <option key={value}>{value}</option>)}</select>{form.category === '人事' && <span className="mt-1 block text-[11px] font-bold leading-5 text-[#d96710]">人事公告會在員工 App 顯示 2 天，公告系統仍會保留完整紀錄。</span>}</label>
               <label><span className="form-label">適用門市</span><select value={form.storeId} onChange={(e) => setForm({ ...form, storeId: e.target.value, publisher: e.target.value === 'storeA' ? PUBLISHER_OPTIONS[0] : e.target.value === 'storeB' ? PUBLISHER_OPTIONS[1] : form.publisher })} className="form-input">{STORE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
               <label><span className="form-label">重要程度</span><select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="form-input">{Object.entries(LEVELS).map(([value, detail]) => <option key={value} value={value}>{detail.label}</option>)}</select></label>
               <label><span className="form-label">發布單位</span><select value={form.publisher} onChange={(e) => setForm({ ...form, publisher: e.target.value })} className="form-input">{PUBLISHER_OPTIONS.map((value) => <option key={value}>{value}</option>)}</select></label>
