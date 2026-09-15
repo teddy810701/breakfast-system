@@ -9,7 +9,8 @@ import {
   updateDoc,
   deleteDoc,
   getDoc,
-  setDoc
+  setDoc,
+  runTransaction
 } from 'firebase/firestore';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Announcements from './Announcements';
@@ -135,6 +136,7 @@ const App = () => {
   const [adminPointDate, setAdminPointDate] = useState(
     new Date().toISOString().split('T')[0]
   );
+  const [pointApprovalRequests, setPointApprovalRequests] = useState([]);
 
   const [missedClockForm, setMissedClockForm] = useState({
     requestDate: new Date().toISOString().split('T')[0],
@@ -624,6 +626,46 @@ const App = () => {
     return () => unsubs.forEach((u) => u && u());
   }, [authReady, firebaseUser, getStoreLabel]);
 
+  // 店長的加扣分先進入待審核；管理員可查看兩間店並核准或退回。
+  useEffect(() => {
+    if (!authReady || !firebaseUser) {
+      setPointApprovalRequests([]);
+      return undefined;
+    }
+
+    const isReviewingAsAdmin = isAdminAuthenticated;
+    const visibleStoreIds = isReviewingAsAdmin
+      ? ['storeA', 'storeB']
+      : currentManager?.storeId
+      ? [currentManager.storeId]
+      : [];
+
+    if (!visibleStoreIds.length) {
+      setPointApprovalRequests([]);
+      return undefined;
+    }
+
+    const unsubs = visibleStoreIds.map((storeId) => onSnapshot(
+      collection(db, 'stores', storeId, 'pointRequests'),
+      (snap) => {
+        setPointApprovalRequests((previous) => {
+          const current = previous.filter((request) => request.storeId !== storeId);
+          const incoming = snap.docs.map((entry) => ({
+            id: entry.id,
+            storeId,
+            ...entry.data()
+          }));
+          return [...current, ...incoming].sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+        });
+      },
+      (error) => {
+        console.error(`讀取 ${storeId} 加扣分審核申請失敗:`, error);
+      }
+    ));
+
+    return () => unsubs.forEach((unsubscribe) => unsubscribe && unsubscribe());
+  }, [authReady, firebaseUser, isAdminAuthenticated, currentManager?.storeId]);
+
   // ===== 登入 =====
   const handleAuth = (e) => {
     e.preventDefault();
@@ -880,6 +922,36 @@ const App = () => {
     }
 
     try {
+      if (currentManager?.key) {
+        if (emp.storeId !== currentManager.storeId) {
+          showMessage('店長只能替自己門市送出加扣分申請', 'error');
+          return false;
+        }
+
+        await addDoc(collection(db, 'stores', emp.storeId, 'pointRequests'), {
+          empId,
+          employeeName: emp.name,
+          amount,
+          reason,
+          note: options.note ?? note,
+          occurrenceDate: options.occurrenceDate ?? occurrenceDate,
+          createdAt: Date.now(),
+          requestedAt: new Date().toISOString(),
+          requestedBy: currentManager.name,
+          requestedByKey: currentManager.key,
+          requestedByStoreId: currentManager.storeId,
+          status: 'pending'
+        });
+
+        if (!options.preserveForm) {
+          setNote('');
+          setSelectedItemLabel('');
+          setCustomPoints('0');
+        }
+        showMessage('已送出加扣分申請，等待管理員審核後才會生效', 'success');
+        return true;
+      }
+
       await addDoc(collection(db, 'stores', emp.storeId, 'logs'), {
         empId,
         amount,
@@ -937,6 +1009,59 @@ const App = () => {
       setAdminPointAmount('');
       setAdminPointReason('');
       setAdminPointNote('');
+    }
+  };
+
+  const handlePointApproval = async (request, decision) => {
+    if (!isAdminAuthenticated || !request?.id || !request?.storeId) return;
+
+    try {
+      const requestRef = doc(db, 'stores', request.storeId, 'pointRequests', request.id);
+      const logRef = doc(collection(db, 'stores', request.storeId, 'logs'));
+      const reviewedAt = new Date().toISOString();
+
+      await runTransaction(db, async (transaction) => {
+        const requestSnap = await transaction.get(requestRef);
+        const latest = requestSnap.data() || {};
+        if (!requestSnap.exists() || latest.status !== 'pending') {
+          throw new Error('這筆申請已經被處理過');
+        }
+
+        if (decision === 'approve') {
+          transaction.set(logRef, {
+            empId: latest.empId,
+            amount: Number(latest.amount),
+            reason: latest.reason,
+            note: latest.note || '',
+            occurrenceDate: latest.occurrenceDate || new Date().toISOString().split('T')[0],
+            timestamp: reviewedAt,
+            createdAt: Date.now(),
+            name: latest.employeeName || '未知員工',
+            operator: latest.requestedBy || '店長',
+            operatorKey: latest.requestedByKey || 'manager',
+            operatorStoreId: latest.requestedByStoreId || request.storeId,
+            operatorStoreLabel: getStoreLabel(latest.requestedByStoreId || request.storeId),
+            actionType: 'score_change',
+            approvalStatus: 'approved',
+            approvalRequestId: request.id,
+            approvedBy: '管理員',
+            approvedAt: reviewedAt
+          });
+        }
+
+        transaction.update(requestRef, {
+          status: decision === 'approve' ? 'approved' : 'rejected',
+          reviewedAt,
+          reviewedBy: '管理員',
+          reviewedByKey: 'admin',
+          ...(decision === 'approve' ? { approvedLogId: logRef.id } : {})
+        });
+      });
+
+      showMessage(decision === 'approve' ? '已核准，積分紀錄已送出' : '已退回，這筆加扣分不會生效', 'success');
+    } catch (error) {
+      console.error('處理加扣分審核申請失敗:', error);
+      showMessage(error?.message || '處理加扣分審核申請失敗', 'error');
     }
   };
 
@@ -3127,7 +3252,7 @@ const App = () => {
                       <Sparkles size={18} className="text-orange-600" />
                       快速加扣分
                     </h3>
-                    <p className="text-xs text-gray-500 font-bold mt-1">先選擇員工與考核項目，再確認點數後儲存。</p>
+                    <p className="text-xs text-gray-500 font-bold mt-1">先選擇員工與考核項目；店長送出後會先交給管理員審核，核准才會生效。</p>
                   </div>
                   {selectedEmp && (
                     <button
@@ -3219,9 +3344,33 @@ const App = () => {
                   className="mt-4 w-full py-3.5 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2"
                 >
                   <ArrowRight size={18} />
-                  儲存加扣分
+                  {currentManager ? '送出管理員審核' : '儲存加扣分'}
                 </button>
               </div>
+
+              {currentManager && (
+                <div className="mt-5 rounded-2xl bg-white border border-orange-100 p-4">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <h4 className="font-black text-gray-800">最近送出的加扣分申請</h4>
+                    <span className="text-xs font-black text-gray-400">核准後才會計入</span>
+                  </div>
+                  {pointApprovalRequests.filter((request) => request.requestedByKey === currentManager.key).slice(0, 5).length ? (
+                    <div className="space-y-2">
+                      {pointApprovalRequests.filter((request) => request.requestedByKey === currentManager.key).slice(0, 5).map((request) => (
+                        <div key={request.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl bg-gray-50 px-3 py-2">
+                          <div>
+                            <p className="font-black text-gray-700">{request.employeeName}・{request.reason}</p>
+                            <p className="text-xs text-gray-400 font-bold">{request.occurrenceDate}・{request.amount > 0 ? '+' : ''}{request.amount} 分</p>
+                          </div>
+                          <span className={`w-fit px-2.5 py-1 rounded-full text-xs font-black ${request.status === 'approved' ? 'bg-green-100 text-green-700' : request.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                            {request.status === 'approved' ? '已核准' : request.status === 'rejected' ? '已退回' : '待管理員審核'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-sm text-gray-400 font-bold">目前沒有送出的申請。</p>}
+                </div>
+              )}
 
               {selectedEmp && managerEmployeeDetailsOpen ? (
                 <>
@@ -3524,6 +3673,43 @@ const App = () => {
               </div>
             </section>
 
+            <section className="bg-white p-6 rounded-3xl shadow-sm border border-orange-100">
+              <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 className="text-lg font-black text-gray-800 flex items-center gap-2">
+                    <ShieldCheck size={19} className="text-orange-500" />
+                    店長加扣分待審核
+                  </h3>
+                  <p className="text-xs text-gray-400 font-bold mt-1">店長送出的加分與扣分，必須由管理員核准後才會寫入員工積分。</p>
+                </div>
+                <span className="px-3 py-2 rounded-xl bg-orange-50 border border-orange-100 text-xs font-black text-orange-700">
+                  待處理 {pointApprovalRequests.filter((request) => request.status === 'pending').length} 筆
+                </span>
+              </div>
+              {pointApprovalRequests.filter((request) => request.status === 'pending').length ? (
+                <div className="space-y-3">
+                  {pointApprovalRequests.filter((request) => request.status === 'pending').map((request) => (
+                    <article key={request.id} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                        <div>
+                          <p className="font-black text-gray-800">{request.employeeName}・{getStoreLabel(request.storeId)}</p>
+                          <p className={`text-lg font-black mt-1 ${Number(request.amount) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {Number(request.amount) > 0 ? '+' : ''}{request.amount} 分・{request.reason}
+                          </p>
+                          <p className="text-sm text-gray-500 font-bold mt-1">發生日：{request.occurrenceDate}・申請人：{request.requestedBy || '店長'}</p>
+                          {request.note && <p className="text-sm text-gray-500 mt-1">備註：{request.note}</p>}
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <button type="button" onClick={() => handlePointApproval(request, 'approve')} className="px-4 py-2.5 rounded-xl bg-green-600 text-white font-black hover:bg-green-700 transition-colors">核准送出</button>
+                          <button type="button" onClick={() => handlePointApproval(request, 'reject')} className="px-4 py-2.5 rounded-xl bg-white border border-red-200 text-red-600 font-black hover:bg-red-50 transition-colors">退回</button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : <p className="rounded-2xl bg-gray-50 border border-dashed border-gray-200 p-5 text-center text-sm text-gray-400 font-bold">目前沒有待審核的店長加扣分申請。</p>}
+            </section>
+
             <section className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-5">
                 <div><h3 className="text-lg font-black text-gray-800 flex items-center gap-2"><Calendar size={19} className="text-orange-500" />每月積分總表</h3><p className="text-xs text-gray-400 font-bold mt-1">基礎 50 分＋選定月份所有加扣分，依月底分數排序。</p></div>
@@ -3542,7 +3728,7 @@ const App = () => {
                     員工加扣分
                   </h3>
                   <p className="text-xs text-gray-400 font-bold mt-1">
-                    管理員可直接調整兩間門市員工的積分；紀錄會同步到員工 App 與積分明細。
+                    管理員可直接調整兩間門市員工的積分；店長申請則會先出現在上方待審核區。
                   </p>
                 </div>
                 <div className="px-3 py-2 rounded-xl bg-orange-50 border border-orange-100 text-xs font-black text-orange-700">
