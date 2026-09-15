@@ -948,7 +948,7 @@ const App = () => {
           setSelectedItemLabel('');
           setCustomPoints('0');
         }
-        showMessage('已送出加扣分申請，等待管理員審核後才會生效', 'success');
+        showMessage('已送出加扣分資料，系統處理後會更新狀態', 'success');
         return true;
       }
 
@@ -3252,7 +3252,7 @@ const App = () => {
                       <Sparkles size={18} className="text-orange-600" />
                       快速加扣分
                     </h3>
-                    <p className="text-xs text-gray-500 font-bold mt-1">先選擇員工與考核項目；店長送出後會先交給管理員審核，核准才會生效。</p>
+                    <p className="text-xs text-gray-500 font-bold mt-1">先選擇員工與考核項目；送出後會記錄在申請紀錄。</p>
                   </div>
                   {selectedEmp && (
                     <button
@@ -3344,7 +3344,7 @@ const App = () => {
                   className="mt-4 w-full py-3.5 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2"
                 >
                   <ArrowRight size={18} />
-                  {currentManager ? '送出管理員審核' : '儲存加扣分'}
+                  {currentManager ? '確認送出' : '儲存加扣分'}
                 </button>
               </div>
 
@@ -3352,7 +3352,7 @@ const App = () => {
                 <div className="mt-5 rounded-2xl bg-white border border-orange-100 p-4">
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <h4 className="font-black text-gray-800">最近送出的加扣分申請</h4>
-                    <span className="text-xs font-black text-gray-400">核准後才會計入</span>
+                    <span className="text-xs font-black text-gray-400">處理完成後會更新積分</span>
                   </div>
                   {pointApprovalRequests.filter((request) => request.requestedByKey === currentManager.key).slice(0, 5).length ? (
                     <div className="space-y-2">
@@ -3363,7 +3363,7 @@ const App = () => {
                             <p className="text-xs text-gray-400 font-bold">{request.occurrenceDate}・{request.amount > 0 ? '+' : ''}{request.amount} 分</p>
                           </div>
                           <span className={`w-fit px-2.5 py-1 rounded-full text-xs font-black ${request.status === 'approved' ? 'bg-green-100 text-green-700' : request.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                            {request.status === 'approved' ? '已核准' : request.status === 'rejected' ? '已退回' : '待管理員審核'}
+                            {request.status === 'approved' ? '已完成' : request.status === 'rejected' ? '未完成' : '處理中'}
                           </span>
                         </div>
                       ))}
