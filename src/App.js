@@ -12,7 +12,8 @@ import {
   setDoc,
   runTransaction
 } from 'firebase/firestore';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { pendingPointKey, readPendingPoint, createPointSubmission, submitPointOnce } from './pointSubmission';
 import Announcements from './Announcements';
 import {
   Users,
@@ -116,6 +117,13 @@ const App = () => {
   const [authReady, setAuthReady] = useState(false);
   const [firebaseAuthReady, setFirebaseAuthReady] = useState(false);
   const [firebaseUser, setFirebaseUser] = useState(null);
+  const pointSubmittingRef = useRef(false);
+  const [pointSubmitting, setPointSubmitting] = useState(false);
+  const [pendingPoint, setPendingPoint] = useState(null);
+  useEffect(() => {
+    try { setPendingPoint(readPendingPoint(window.localStorage, firebaseUser?.uid)); }
+    catch { showMessage('待確認加扣分資料無法讀取，請聯絡管理員', 'error'); }
+  }, [firebaseUser?.uid]);
 
   const [passwordPanel, setPasswordPanel] = useState({
     adminPassword: '',
@@ -915,74 +923,50 @@ const App = () => {
 
   // ===== 加扣分 =====
   const handlePointChange = async (empId, amount, reason, options = {}) => {
-    const emp = employees.find((e) => e.id === empId);
-    if (!emp) {
-      showMessage('找不到員工資料', 'error');
-      return;
-    }
-
+    if (pointSubmittingRef.current) return false;
+    if (!firebaseUser?.uid || (!isAdminAuthenticated && !currentManager)) return false;
+    pointSubmittingRef.current = true;
+    setPointSubmitting(true);
     try {
-      if (currentManager?.key) {
-        if (emp.storeId !== currentManager.storeId) {
+      let submission = readPendingPoint(window.localStorage, firebaseUser.uid);
+      if (!submission) {
+        const emp = employees.find(e => e.id === empId);
+        if (!emp) throw new Error('找不到員工資料');
+        if (!Number.isInteger(amount) || amount === 0 || !String(reason || '').trim()) throw new Error('請選擇加扣分項目並填寫非 0 的整數點數');
+        if (currentManager && emp.storeId !== currentManager.storeId) {
           showMessage('店長只能替自己門市送出加扣分申請', 'error');
           return false;
         }
-
-        await addDoc(collection(db, 'stores', emp.storeId, 'pointRequests'), {
-          empId,
-          employeeName: emp.name,
-          amount,
-          reason,
-          note: options.note ?? note,
-          occurrenceDate: options.occurrenceDate ?? occurrenceDate,
-          createdAt: Date.now(),
-          requestedAt: new Date().toISOString(),
-          requestedBy: currentManager.name,
-          requestedByKey: currentManager.key,
-          requestedByStoreId: currentManager.storeId,
-          status: 'pending'
-        });
-
-        if (!options.preserveForm) {
-          setNote('');
-          setSelectedItemLabel('');
-          setCustomPoints('0');
-        }
-        showMessage('已送出加扣分資料，系統處理後會更新狀態', 'success');
-        return true;
+        const common = {empId,amount,reason,note:options.note ?? note,occurrenceDate:options.occurrenceDate ?? occurrenceDate,createdAt:Date.now()};
+        const payload = currentManager ? {...common,employeeName:emp.name,requestedAt:new Date().toISOString(),requestedBy:currentManager.name,requestedByKey:currentManager.key,requestedByStoreId:currentManager.storeId,status:'pending'} : {...common,timestamp:new Date().toISOString(),name:emp.name,operator:'管理員',operatorKey:'admin',operatorStoreId:emp.storeId,operatorStoreLabel:getStoreLabel(emp.storeId),actionType:'score_change'};
+        submission = createPointSubmission({uid:firebaseUser.uid,storeId:emp.storeId,collection:currentManager ? 'pointRequests' : 'logs',payload},window.crypto.randomUUID());
+        // If durable storage is unavailable, do not send an untrackable operation.
+        window.localStorage.setItem(pendingPointKey(firebaseUser.uid),JSON.stringify(submission));
       }
-
-      await addDoc(collection(db, 'stores', emp.storeId, 'logs'), {
-        empId,
-        amount,
-        reason,
-        note: options.note ?? note,
-        occurrenceDate: options.occurrenceDate ?? occurrenceDate,
-        timestamp: new Date().toISOString(),
-        createdAt: Date.now(),
-        name: emp.name,
-        operator: currentManager?.name || '管理員',
-        operatorKey: currentManager?.key || 'admin',
-        operatorStoreId: currentManager?.storeId || emp.storeId,
-        operatorStoreLabel: getStoreLabel(currentManager?.storeId || emp.storeId),
-        actionType: 'score_change'
-      });
-
+      if (currentManager && (submission.storeId !== currentManager.storeId || submission.collection !== 'pointRequests' || submission.payload.requestedByKey !== currentManager.key)) throw new Error('請用原送出人員登入，確認上一次結果');
+      setPendingPoint(submission);
+      await submitPointOnce(submission,{ref:path=>doc(db,path),transaction:callback=>runTransaction(db,callback)});
+      window.localStorage.removeItem(pendingPointKey(firebaseUser.uid));
+      setPendingPoint(null);
       if (!options.preserveForm) {
         setNote('');
         setSelectedItemLabel('');
         setCustomPoints('0');
       }
-      showMessage('紀錄已新增', 'success');
+      showMessage(submission.collection === 'pointRequests' ? '已送出待審核申請（未直接加扣分）' : '加扣分已儲存', 'success');
       return true;
     } catch (error) {
       console.error('新增紀錄失敗:', error);
-      showMessage('新增紀錄失敗', 'error');
+      showMessage(`尚未確認送出結果：${error.message || '連線失敗'}。請按「確認上次送出結果」，勿重填另一筆。`, 'error');
       return false;
+    } finally {
+      pointSubmittingRef.current = false;
+      setPointSubmitting(false);
     }
   };
 
   const handleAdminPointChange = async () => {
+    if (pendingPoint) return handlePointChange();
     const amount = Number(adminPointAmount);
     const reason = adminPointReason.trim();
 
@@ -1772,6 +1756,7 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900 pb-12">
+      {pendingPoint && (isAdminAuthenticated || currentManager) && <div role="status" className="mx-4 mt-4 p-4 rounded-2xl bg-orange-50 border border-orange-200 text-orange-900"><strong>有一筆加扣分尚未確認</strong><p>確認原本送出的結果，不會新增第二筆。</p><button type="button" disabled={pointSubmitting} onClick={() => handlePointChange()} className="mt-2 px-4 py-2 rounded-xl bg-gray-900 text-white disabled:opacity-50">{pointSubmitting ? '確認中…' : '確認上次送出結果'}</button></div>}
       {systemMessage && (
         <div
           className={`fixed top-4 left-1/2 -translate-x-1/2 z-[1000] px-6 py-3 rounded-full shadow-2xl font-bold flex items-center gap-2 ${
@@ -3335,16 +3320,18 @@ const App = () => {
                 <button
                   type="button"
                   onClick={() => {
+                    if (pendingPoint) return handlePointChange();
                     if (!selectedEmp) return showMessage('請先選擇夥伴', 'error');
                     if (!selectedItemLabel) return showMessage('請先選擇考核項目', 'error');
                     const scoreAmount = Number(customPoints);
                     if (customPoints === '' || customPoints === '-' || Number.isNaN(scoreAmount)) return showMessage('請輸入正確點數，例如 -10 或 5', 'error');
                     handlePointChange(selectedEmp.id, scoreAmount, selectedItemLabel);
                   }}
-                  className="mt-4 w-full py-3.5 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2"
+                  disabled={pointSubmitting}
+                  className="mt-4 w-full py-3.5 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <ArrowRight size={18} />
-                  {currentManager ? '確認送出' : '儲存加扣分'}
+                  {pointSubmitting ? '送出確認中…' : pendingPoint ? '確認上次送出結果' : currentManager ? '確認送出' : '儲存加扣分'}
                 </button>
               </div>
 
@@ -3826,10 +3813,11 @@ const App = () => {
                 <button
                   type="button"
                   onClick={handleAdminPointChange}
+                  disabled={pointSubmitting}
                   className="py-3.5 rounded-2xl bg-gray-900 text-white font-black hover:bg-orange-600 transition-colors inline-flex items-center justify-center gap-2"
                 >
                   <ArrowRight size={18} />
-                  儲存加扣分
+                  {pointSubmitting ? '送出確認中…' : pendingPoint ? '確認上次送出結果' : '儲存加扣分'}
                 </button>
               </div>
             </section>
