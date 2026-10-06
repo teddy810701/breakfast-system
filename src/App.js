@@ -1817,7 +1817,7 @@ const App = () => {
                     {getManagerLabel({ key: 'managerA', storeId: 'storeA' })}
                   </option>
                   <option value="managerB">
-                    {authConfig?.managerB?.name || '店長B'} / {getStoreLabel('storeB')}
+                    {getManagerLabel({ key: 'managerB', storeId: 'storeB' })}
                   </option>
                 </select>
               </div>
@@ -3189,7 +3189,7 @@ const App = () => {
                   </h2>
                   <p className="text-xs text-gray-400 font-bold mt-1">
                     {currentManager
-                      ? currentStoreId === 'storeA' ? getManagerLabel(currentManager) : `${getManagerLabel(currentManager)} / ${getStoreLabel(currentStoreId)}`
+                      ? getManagerLabel(currentManager)
                       : '選取夥伴並提交當日考核表現'}
                   </p>
                 </div>
