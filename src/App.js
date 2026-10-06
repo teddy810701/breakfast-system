@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { pendingPointKey, readPendingPoint, createPointSubmission, submitPointOnce } from './pointSubmission';
+import { getManagerLabel, getPointOperatorLabel } from './managerLabel';
 import Announcements from './Announcements';
 import {
   Users,
@@ -905,7 +906,7 @@ const App = () => {
         timestamp: new Date().toISOString(),
         createdAt: Date.now(),
         name: editingEmp.name,
-        operator: currentManager?.name || '管理員',
+        operator: getManagerLabel(currentManager, '管理員'),
         operatorKey: currentManager?.key || 'admin',
         operatorStoreId: currentManager?.storeId || storeId,
         operatorStoreLabel: getStoreLabel(currentManager?.storeId || storeId),
@@ -938,7 +939,7 @@ const App = () => {
           return false;
         }
         const common = {empId,amount,reason,note:options.note ?? note,occurrenceDate:options.occurrenceDate ?? occurrenceDate,createdAt:Date.now()};
-        const payload = currentManager ? {...common,employeeName:emp.name,requestedAt:new Date().toISOString(),requestedBy:currentManager.name,requestedByKey:currentManager.key,requestedByStoreId:currentManager.storeId,status:'pending'} : {...common,timestamp:new Date().toISOString(),name:emp.name,operator:'管理員',operatorKey:'admin',operatorStoreId:emp.storeId,operatorStoreLabel:getStoreLabel(emp.storeId),actionType:'score_change'};
+        const payload = currentManager ? {...common,employeeName:emp.name,requestedAt:new Date().toISOString(),requestedBy:getManagerLabel(currentManager),requestedByKey:currentManager.key,requestedByStoreId:currentManager.storeId,status:'pending'} : {...common,timestamp:new Date().toISOString(),name:emp.name,operator:'管理員',operatorKey:'admin',operatorStoreId:emp.storeId,operatorStoreLabel:getStoreLabel(emp.storeId),actionType:'score_change'};
         submission = createPointSubmission({uid:firebaseUser.uid,storeId:emp.storeId,collection:currentManager ? 'pointRequests' : 'logs',payload},window.crypto.randomUUID());
         // If durable storage is unavailable, do not send an untrackable operation.
         window.localStorage.setItem(pendingPointKey(firebaseUser.uid),JSON.stringify(submission));
@@ -1021,7 +1022,7 @@ const App = () => {
             timestamp: reviewedAt,
             createdAt: Date.now(),
             name: latest.employeeName || '未知員工',
-            operator: latest.requestedBy || '店長',
+            operator: getPointOperatorLabel(latest),
             operatorKey: latest.requestedByKey || 'manager',
             operatorStoreId: latest.requestedByStoreId || request.storeId,
             operatorStoreLabel: getStoreLabel(latest.requestedByStoreId || request.storeId),
@@ -1065,7 +1066,7 @@ const App = () => {
         timestamp: new Date().toISOString(),
         createdAt: Date.now(),
         name: log.name || '未知員工',
-        operator: currentManager?.name || '管理員',
+        operator: getManagerLabel(currentManager, '管理員'),
         operatorKey: currentManager?.key || 'admin',
         operatorStoreId: currentManager?.storeId || log.storeId,
         operatorStoreLabel: getStoreLabel(currentManager?.storeId || log.storeId),
@@ -1104,7 +1105,7 @@ const App = () => {
         occurrenceDate: new Date().toISOString().split('T')[0],
         timestamp: new Date().toISOString(),
         createdAt: Date.now(),
-        operator: currentManager?.name || '管理員',
+        operator: getManagerLabel(currentManager, '管理員'),
         operatorKey: currentManager?.key || 'admin',
         operatorStoreId: currentManager?.storeId || emp.storeId,
         operatorStoreLabel: getStoreLabel(currentManager?.storeId || emp.storeId),
@@ -1178,7 +1179,7 @@ const App = () => {
         timestamp: new Date().toISOString(),
         createdAt: Date.now(),
         name: editingEmp.name,
-        operator: currentManager?.name || '管理員',
+        operator: getManagerLabel(currentManager, '管理員'),
         operatorKey: currentManager?.key || 'admin',
         operatorStoreId: currentManager?.storeId || targetStoreId,
         operatorStoreLabel: getStoreLabel(currentManager?.storeId || targetStoreId),
@@ -1226,7 +1227,7 @@ const App = () => {
       log.reason,
       log.note,
       log.name,
-      log.operator,
+      getPointOperatorLabel(log, ''),
       log.requestDate,
       log.requestTime,
       log.requestDateTime,
@@ -1813,7 +1814,7 @@ const App = () => {
                   className="w-full mt-1 px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-orange-500 outline-none font-bold"
                 >
                   <option value="managerA">
-                    {authConfig?.managerA?.name || '店長A'} / {getStoreLabel('storeA')}
+                    {getManagerLabel({ key: 'managerA', storeId: 'storeA' })}
                   </option>
                   <option value="managerB">
                     {authConfig?.managerB?.name || '店長B'} / {getStoreLabel('storeB')}
@@ -2374,7 +2375,7 @@ const App = () => {
             >
               <Store size={14} />
               <span className="hidden sm:inline">
-                {activeTab === 'manager' ? currentManager?.name || '店長' : '店長'}
+                {activeTab === 'manager' ? getManagerLabel(currentManager) : '店長'}
               </span>
             </button>
 
@@ -3038,7 +3039,7 @@ const App = () => {
                           </div>
 
                           <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">
-                            {log.operator || '-'}
+                            {getPointOperatorLabel(log, '-')}
                           </span>
                         </div>
                       ))}
@@ -3188,7 +3189,7 @@ const App = () => {
                   </h2>
                   <p className="text-xs text-gray-400 font-bold mt-1">
                     {currentManager
-                      ? `${currentManager.name} / ${getStoreLabel(currentStoreId)}`
+                      ? currentStoreId === 'storeA' ? getManagerLabel(currentManager) : `${getManagerLabel(currentManager)} / ${getStoreLabel(currentStoreId)}`
                       : '選取夥伴並提交當日考核表現'}
                   </p>
                 </div>
@@ -3683,7 +3684,7 @@ const App = () => {
                           <p className={`text-lg font-black mt-1 ${Number(request.amount) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             {Number(request.amount) > 0 ? '+' : ''}{request.amount} 分・{request.reason}
                           </p>
-                          <p className="text-sm text-gray-500 font-bold mt-1">發生日：{request.occurrenceDate}・申請人：{request.requestedBy || '店長'}</p>
+                          <p className="text-sm text-gray-500 font-bold mt-1">發生日：{request.occurrenceDate}・申請人：{getPointOperatorLabel(request)}</p>
                           {request.note && <p className="text-sm text-gray-500 mt-1">備註：{request.note}</p>}
                         </div>
                         <div className="flex gap-2 shrink-0">
@@ -4165,7 +4166,7 @@ const App = () => {
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-black text-gray-800">
-                              {log.operator || '店長'} → {log.name || '未指定員工'}
+                              {getPointOperatorLabel(log)} → {log.name || '未指定員工'}
                             </p>
                             <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-white border border-gray-200 text-gray-500">
                               {log.operatorStoreLabel || getStoreLabel(log.operatorStoreId || log.storeId)}
