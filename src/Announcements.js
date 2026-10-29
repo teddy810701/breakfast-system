@@ -10,6 +10,7 @@ import {
 import {
   Archive,
   ArrowLeft,
+  BellRing,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -56,6 +57,20 @@ const PRINT_SAMPLE = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const taipeiDateKey = (value = new Date()) => {
+  const date = value?.toDate ? value.toDate() : value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+};
+const taipeiTimeLabel = (value) => {
+  const date = value?.toDate ? value.toDate() : new Date(value || 0);
+  return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('zh-TW', {
+    timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).format(date);
+};
 const emptyForm = () => ({
   title: '',
   category: '工作規範',
@@ -191,6 +206,7 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
+  const [remindingId, setRemindingId] = useState('');
   const [query, setQuery] = useState('');
   const [calendarMonth, setCalendarMonth] = useState(today().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState('');
@@ -378,6 +394,36 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
     }
   };
 
+  const remindEmployees = async (item) => {
+    if (!canManage || !item?.id || item.isDemo || item.status !== 'published') return;
+    if (taipeiDateKey(item.manualReminderAt) === taipeiDateKey()) {
+      showMessage('這則公告今天已提醒過，明天可以再次提醒', 'error');
+      return;
+    }
+    setRemindingId(item.id);
+    try {
+      const ref = doc(db, 'stores', 'shared', 'announcements', item.id);
+      const reminderAt = new Date().toISOString();
+      const sent = await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists() || snapshot.data()?.status !== 'published') throw new Error('ANNOUNCEMENT_NOT_ACTIVE');
+        if (taipeiDateKey(snapshot.data()?.manualReminderAt) === taipeiDateKey(reminderAt)) return false;
+        transaction.update(ref, { manualReminderAt: reminderAt, manualReminderBy: editorName });
+        return true;
+      });
+      if (!sent) {
+        showMessage('這則公告今天已提醒過，明天可以再次提醒', 'error');
+        return;
+      }
+      showMessage('已送出手動提醒，通知公告適用門市的員工與管理者', 'success');
+    } catch (error) {
+      console.error('公告手動提醒失敗:', error);
+      showMessage(error?.message === 'ANNOUNCEMENT_NOT_ACTIVE' ? '公告已作廢或不存在，無法提醒' : '提醒送出失敗，請稍後再試', 'error');
+    } finally {
+      setRemindingId('');
+    }
+  };
+
   if (printing) return <AnnouncementPrint item={printing} onBack={() => setPrinting(null)} />;
 
   return (
@@ -511,8 +557,10 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
               <div className="mt-7 flex flex-wrap gap-3">
                 <button type="button" onClick={() => setPrinting(selected)} className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 font-black text-white"><Printer size={18} />預覽列印</button>
                 <button type="button" onClick={() => setShowVersions((value) => !value)} className="flex items-center gap-2 rounded-2xl bg-slate-100 px-4 py-3 font-black text-slate-600"><FileText size={18} />版本</button>
+                {canManage && !selected.isDemo && selected.status === 'published' && <button type="button" disabled={remindingId === selected.id || taipeiDateKey(selected.manualReminderAt) === taipeiDateKey()} onClick={() => remindEmployees(selected)} className="flex items-center gap-2 rounded-2xl bg-emerald-100 px-4 py-3 font-black text-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"><BellRing size={18} />{remindingId === selected.id ? '送出中…' : taipeiDateKey(selected.manualReminderAt) === taipeiDateKey() ? '今天已提醒' : '手動提醒'}</button>}
                 {canManage && !selected.isDemo && selected.status !== 'archived' && <><button type="button" onClick={() => { openEdit(selected); setSelected(null); }} className="flex items-center gap-2 rounded-2xl bg-orange-100 px-4 py-3 font-black text-orange-700"><Edit3 size={18} />修改</button><button type="button" onClick={() => archive(selected)} className="flex items-center gap-2 rounded-2xl bg-red-50 px-4 py-3 font-black text-red-600"><Archive size={18} />作廢</button></>}
               </div>
+              {canManage && selected.status === 'published' && !selected.isDemo && <p className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-400"><span>提醒對象依公告適用門市；同一則公告每天可提醒一次。</span>{selected.manualReminderAt && <span>上次提醒：{taipeiTimeLabel(selected.manualReminderAt)}</span>}</p>}
             </div>
           </article>
         </div>
