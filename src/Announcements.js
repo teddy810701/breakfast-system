@@ -121,7 +121,9 @@ const snapshotVersion = (record, editor, note) => ({
   attachmentUrl: record.attachmentUrl || '',
   imageData: record.imageData || '',
   employeeVisibleUntil: record.employeeVisibleUntil || '',
-  status: record.status,
+  // Older announcements may not have a status field. Firestore rejects
+  // undefined values inside arrays, so always persist a concrete value.
+  status: record.status || 'published',
   savedAt: new Date().toISOString(),
   savedBy: editor,
   note
@@ -204,7 +206,8 @@ const firebaseErrorMessage = (error, action = '儲存公告') => {
   if (code === 'unauthenticated') return `${action}失敗：Firebase 登入已失效，請重新整理頁面後再試。`;
   if (code === 'unavailable' || code === 'deadline-exceeded') return `${action}失敗：Firebase 暫時無法連線，請稍後再試。`;
   if (code === 'not-found') return `${action}失敗：這篇公告已不存在，請重新整理公告列表。`;
-  return `${action}失敗${code ? `（${code}）` : ''}，請稍後再試。`;
+  const detail = code || String(error?.message || '').match(/Unsupported field value[^.]+/i)?.[0] || '';
+  return `${action}失敗${detail ? `（${detail}）` : ''}，請稍後再試。`;
 };
 
 export default function Announcements({ db, firebaseUser, isAdmin, onRequestAdminLogin, createRequested, onCreateRequestHandled, showMessage }) {
