@@ -371,6 +371,9 @@ export default function Announcements({ db, firebaseUser, isAdmin, onRequestAdmi
     try {
       const now = new Date().toISOString();
       if (editing) {
+        const comparableFields = ['title', 'category', 'storeId', 'content', 'announcementDate', 'effectiveDate', 'requiresSignature', 'priority', 'publisher', 'attachmentName', 'attachmentUrl', 'imageData'];
+        const onlyPinChanged = form.pinned !== Boolean(editing.pinned)
+          && comparableFields.every((field) => String(form[field] ?? '') === String(editing[field] ?? ''));
         const history = compactVersionHistory([...(editing.versions || []), snapshotVersion(editing, editorName, '修改前版本')]);
         const { isNew, ...announcementFields } = form;
         await updateDoc(doc(db, 'stores', 'shared', 'announcements', editing.id), {
@@ -379,7 +382,7 @@ export default function Announcements({ db, firebaseUser, isAdmin, onRequestAdmi
           employeeVisibleUntil: employeeVisibleUntil(form.category),
           version: (editing.version || 1) + 1, versions: history, updatedAt: now, updatedBy: editorName
         });
-        showMessage('公告已更新並保留舊版本', 'success');
+        if (!onlyPinChanged) showMessage('公告已更新並保留舊版本', 'success');
       } else {
         const dateKey = form.announcementDate.replaceAll('-', '');
         const counterRef = doc(db, 'settings', `announcement-counter-${dateKey}`);
