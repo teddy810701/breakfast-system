@@ -100,6 +100,14 @@ const employeeVisibleUntil = (category) => category === '人事'
 
 const storeLabel = (value) => STORE_OPTIONS.find((item) => item.value === value)?.label || value;
 
+const removeUndefined = (value) => {
+  if (Array.isArray(value)) return value.map(removeUndefined);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined).map(([key, entry]) => [key, removeUndefined(entry)]));
+  }
+  return value;
+};
+
 const sortTime = (value) => {
   if (value?.toDate) return value.toDate().getTime();
   const parsed = new Date(value || 0).getTime();
@@ -359,7 +367,7 @@ export default function Announcements({ db, firebaseUser, isAdmin, onRequestAdmi
     try {
       const now = new Date().toISOString();
       if (editing) {
-        const history = [...(editing.versions || []), snapshotVersion(editing, editorName, '修改前版本')];
+        const history = removeUndefined([...(editing.versions || []), snapshotVersion(editing, editorName, '修改前版本')]);
         const { isNew, ...announcementFields } = form;
         await updateDoc(doc(db, 'stores', 'shared', 'announcements', editing.id), {
           ...announcementFields,
