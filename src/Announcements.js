@@ -108,6 +108,11 @@ const removeUndefined = (value) => {
   return value;
 };
 
+const compactVersionHistory = (versions) => removeUndefined((versions || []).map((version) => {
+  const { imageData, ...withoutImage } = version || {};
+  return withoutImage;
+}).slice(-30));
+
 const sortTime = (value) => {
   if (value?.toDate) return value.toDate().getTime();
   const parsed = new Date(value || 0).getTime();
@@ -127,7 +132,6 @@ const snapshotVersion = (record, editor, note) => ({
   pinned: Boolean(record.pinned),
   attachmentName: record.attachmentName || '',
   attachmentUrl: record.attachmentUrl || '',
-  imageData: record.imageData || '',
   employeeVisibleUntil: record.employeeVisibleUntil || '',
   // Older announcements may not have a status field. Firestore rejects
   // undefined values inside arrays, so always persist a concrete value.
@@ -367,7 +371,7 @@ export default function Announcements({ db, firebaseUser, isAdmin, onRequestAdmi
     try {
       const now = new Date().toISOString();
       if (editing) {
-        const history = removeUndefined([...(editing.versions || []), snapshotVersion(editing, editorName, '修改前版本')]);
+        const history = compactVersionHistory([...(editing.versions || []), snapshotVersion(editing, editorName, '修改前版本')]);
         const { isNew, ...announcementFields } = form;
         await updateDoc(doc(db, 'stores', 'shared', 'announcements', editing.id), {
           ...announcementFields,
