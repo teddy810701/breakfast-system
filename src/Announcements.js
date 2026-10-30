@@ -198,7 +198,16 @@ function AnnouncementPrint({ item, onBack }) {
   );
 }
 
-export default function Announcements({ db, isAdmin, onRequestAdminLogin, createRequested, onCreateRequestHandled, showMessage }) {
+const firebaseErrorMessage = (error, action = '儲存公告') => {
+  const code = String(error?.code || '').replace(/^.*\//, '');
+  if (code === 'permission-denied') return `${action}失敗：目前登入帳號沒有公告編輯權限，請重新登入管理員。`;
+  if (code === 'unauthenticated') return `${action}失敗：Firebase 登入已失效，請重新整理頁面後再試。`;
+  if (code === 'unavailable' || code === 'deadline-exceeded') return `${action}失敗：Firebase 暫時無法連線，請稍後再試。`;
+  if (code === 'not-found') return `${action}失敗：這篇公告已不存在，請重新整理公告列表。`;
+  return `${action}失敗${code ? `（${code}）` : ''}，請稍後再試。`;
+};
+
+export default function Announcements({ db, firebaseUser, isAdmin, onRequestAdminLogin, createRequested, onCreateRequestHandled, showMessage }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -339,6 +348,10 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
       showMessage('請完整填寫標題、內容、公告日期與生效日期', 'error');
       return;
     }
+    if (!firebaseUser) {
+      showMessage('Firebase 尚未完成登入，請稍候再試。', 'error');
+      return;
+    }
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -372,8 +385,8 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
       }
       closeEditor();
     } catch (error) {
-      console.error('儲存公告失敗:', error);
-      showMessage('公告儲存失敗，請確認網路或 Firebase 權限', 'error');
+      console.error('儲存公告失敗:', { code: error?.code, message: error?.message, error });
+      showMessage(firebaseErrorMessage(error), 'error');
     } finally {
       setSaving(false);
     }
@@ -389,8 +402,8 @@ export default function Announcements({ db, isAdmin, onRequestAdminLogin, create
       setSelected(null);
       showMessage('公告已作廢並保留紀錄', 'success');
     } catch (error) {
-      console.error('作廢公告失敗:', error);
-      showMessage('公告作廢失敗', 'error');
+      console.error('作廢公告失敗:', { code: error?.code, message: error?.message, error });
+      showMessage(firebaseErrorMessage(error, '公告作廢'), 'error');
     }
   };
 

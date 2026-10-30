@@ -2402,6 +2402,7 @@ const App = () => {
         {activeTab === 'announcements' && (
           <Announcements
             db={db}
+            firebaseUser={firebaseUser}
             isAdmin={isAdminAuthenticated}
             onRequestAdminLogin={requestAnnouncementAdminLogin}
             createRequested={announcementCreateRequested}
